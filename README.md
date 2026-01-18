@@ -1,6 +1,6 @@
 # Wale PineScript to Python Engine
 
-A production-grade engine that converts TradingView PineScript strategies to Python, enabling local backtesting with exact trade-by-trade validation.
+An engine that converts TradingView PineScript strategies to Python, enabling local backtesting with exact trade-by-trade validation.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
@@ -45,7 +45,6 @@ wale-pinescript-engine/
 TradingView's backtester is great for visualization but has limitations:
 
 - **No programmatic access** - You cannot run thousands of parameter combinations
-- **No Monte Carlo** - TradingView shows one equity curve, not a distribution
 - **No custom robustness tests** - Walk-forward, CPCV, permutation tests are impossible
 - **Limited export** - Getting raw trade data requires manual Excel downloads
 
