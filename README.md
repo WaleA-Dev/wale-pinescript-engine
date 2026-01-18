@@ -7,6 +7,29 @@ A production-grade engine that converts TradingView PineScript strategies to Pyt
 
 ---
 
+## Project Structure
+
+```
+wale-pinescript-engine/
+├── backtest_engine.py      # Main CLI entry point
+├── requirements.txt        # Python dependencies
+├── src/
+│   ├── __init__.py
+│   ├── indicators.py       # EMA, RMA, ATR, ADX, RSI, MACD, etc.
+│   ├── parser.py           # PineScript parameter extraction
+│   ├── backtest.py         # Core backtest engine
+│   └── validator.py        # TradingView comparison
+├── tests/
+│   ├── __init__.py
+│   └── test_indicators.py  # Indicator unit tests
+└── docs/
+    ├── 01-engine-architecture.md
+    ├── 02-accuracy-testing.md
+    └── 03-cli-reference.md
+```
+
+---
+
 ## What This Engine Does
 
 1. **Parses PineScript** - Extracts strategy parameters, indicator logic, and entry/exit rules from your `.pine` files
@@ -32,9 +55,17 @@ This engine solves all of that while maintaining TradingView-equivalent accuracy
 
 ## Quick Start
 
-### Prerequisites
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/WaleA-Dev/wale-pinescript-engine.git
+cd wale-pinescript-engine
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Or install individually
 pip install numpy pandas scipy openpyxl matplotlib
 ```
 
@@ -199,6 +230,53 @@ backtest/out/
 └── plots/
     ├── step1_equity_drawdown.png
     └── step1_monthly_returns.png
+```
+
+---
+
+## Running Tests
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run specific test file
+python -m pytest tests/test_indicators.py -v
+```
+
+---
+
+## Programmatic Usage
+
+```python
+from src.indicators import ema, atr, adx, rsi
+from src.parser import PineScriptParser, StrategyParams
+from src.backtest import BacktestEngine, BacktestConfig
+from src.validator import TradingViewValidator
+
+# Load and parse strategy
+parser = PineScriptParser(pine_path='strategy.pine')
+params = parser.parse_params()
+
+# Configure backtest
+config = BacktestConfig(
+    initial_capital=100000,
+    commission_pct=0.1,
+)
+
+# Run backtest
+engine = BacktestEngine(config=config, params=params)
+result = engine.run(df)  # df is your OHLC DataFrame
+
+# Access results
+print(f"Total trades: {result.total_trades}")
+print(f"Win rate: {result.win_rate:.1f}%")
+print(f"Profit factor: {result.profit_factor:.2f}")
+
+# Validate against TradingView
+validator = TradingViewValidator(excel_path='tv_export.xlsx')
+validation = validator.validate(result.trades)
+print(validation.message)
 ```
 
 ---
