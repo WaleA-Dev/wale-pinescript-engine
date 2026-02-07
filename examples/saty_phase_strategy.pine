@@ -1,0 +1,74 @@
+//@version=5
+strategy("Saty Phase - High WR", overlay=true, initial_capital=100000)
+
+// === CONFIGURATION (High WR Preset) ===
+stop_loss_pct = input.float(14.0, "Stop Loss %", minval=1, maxval=50)
+trailing_pct = input.float(0.40, "Trailing Stop %", minval=0.1, maxval=10)
+profit_target_pct = input.float(4.5, "Profit Target %", minval=0.5, maxval=20)
+use_ob_exit = input.bool(false, "Use Overbought Exit")
+entry_threshold = input.float(-50, "Entry Threshold", minval=-100, maxval=0)
+
+// === CORE INDICATORS ===
+pivot = ta.ema(close, 21)
+atr14 = ta.atr(14)
+raw_signal = ((close - pivot) / (3.0 * atr14)) * 100
+oscillator = ta.ema(raw_signal, 3)
+
+// === ENTRY SIGNALS ===
+leaving_entry = oscillator[1] <= entry_threshold and oscillator > entry_threshold
+leaving_extreme = oscillator[1] <= -100 and oscillator > -100
+
+// === STATE TRACKING ===
+var float entryPrice = na
+var float highestSinceEntry = na
+var bool trailingActive = false
+var float trailStopPrice = na
+
+// === ENTRY ===
+if (leaving_entry or leaving_extreme) and strategy.position_size == 0
+    strategy.entry("Long", strategy.long)
+    entryPrice := close
+    highestSinceEntry := close
+    trailingActive := false
+    trailStopPrice := na
+
+// === POSITION MANAGEMENT ===
+if strategy.position_size > 0
+    highestSinceEntry := math.max(highestSinceEntry, high)
+    currentPnL = ((close - entryPrice) / entryPrice) * 100
+    stopLossPrice = entryPrice * (1 - stop_loss_pct / 100)
+
+    // Activate trailing stop when profit target reached
+    if currentPnL >= profit_target_pct and not trailingActive
+        trailingActive := true
+        trailStopPrice := highestSinceEntry * (1 - trailing_pct / 100)
+
+    // Update trailing stop
+    if trailingActive
+        trailStopPrice := math.max(trailStopPrice, highestSinceEntry * (1 - trailing_pct / 100))
+
+    // === EXIT CONDITIONS ===
+    if low <= stopLossPrice
+        strategy.close("Long", comment="SL")
+        entryPrice := na
+        highestSinceEntry := na
+        trailingActive := false
+        trailStopPrice := na
+    else if trailingActive and low <= trailStopPrice
+        strategy.close("Long", comment="Trail")
+        entryPrice := na
+        highestSinceEntry := na
+        trailingActive := false
+        trailStopPrice := na
+
+// Reset on position close
+if strategy.position_size == 0 and strategy.position_size[1] > 0
+    entryPrice := na
+    highestSinceEntry := na
+    trailingActive := false
+    trailStopPrice := na
+
+// === VISUALIZATION ===
+plot(oscillator, "Oscillator", color=color.blue)
+hline(-50, "Entry Threshold", color=color.gray)
+hline(-100, "Extreme", color=color.red)

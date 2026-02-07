@@ -6,6 +6,7 @@ __pycache__/
 .Python
 venv/
 ENV/
+.env
 
 # Output directories
 backtest/out/
@@ -13,9 +14,15 @@ backtest/out/
 *.xlsx
 *.xls
 
-# Your private strategy files
+# Your private strategy files (except examples)
 *.pine
-good code.txt
+!examples/*.pine
+
+# Build outputs
+build/
+dist/
+*.spec.bak
+*.exe
 
 # IDE
 .vscode/
@@ -29,3 +36,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# API keys
+*.key
+secrets.json

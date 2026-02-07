@@ -1,9 +1,41 @@
 # Wale PineScript to Python Engine
 
-An engine that converts TradingView PineScript strategies to Python, enabling local backtesting with exact trade-by-trade validation.
+A professional desktop application and CLI for backtesting TradingView PineScript strategies locally with exact trade-by-trade validation.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+---
+
+## NEW: Desktop GUI Application
+
+The engine now includes a professional desktop application with:
+
+- **Clean Dark Theme UI** - Modern, professional interface
+- **Databento Integration** - Fetch live/historical market data with your API key
+- **PineScript Editor** - Load and edit .pine files directly
+- **Real-time Results** - View trades, metrics, and charts instantly
+- **Standalone EXE** - Package as single executable for distribution
+
+### Quick Launch
+
+```bash
+# Launch the GUI application
+python app.py
+```
+
+### Build Standalone EXE
+
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Build the executable
+pyinstaller PineScriptBacktester.spec
+
+# Run it
+./dist/PineScriptBacktester.exe
+```
 
 ---
 
@@ -11,17 +43,26 @@ An engine that converts TradingView PineScript strategies to Python, enabling lo
 
 ```
 wale-pinescript-engine/
-├── backtest_engine.py      # Main CLI entry point
-├── requirements.txt        # Python dependencies
+├── app.py                      # GUI application entry point
+├── backtest_engine.py          # CLI entry point
+├── build_exe.py                # EXE build script
+├── PineScriptBacktester.spec   # PyInstaller config
+├── requirements.txt            # Python dependencies
+├── gui/
+│   ├── __init__.py
+│   └── main_window.py          # Main GUI window
+├── data_providers/
+│   ├── __init__.py
+│   └── databento_provider.py   # Databento API integration
 ├── src/
 │   ├── __init__.py
-│   ├── indicators.py       # EMA, RMA, ATR, ADX, RSI, MACD, etc.
-│   ├── parser.py           # PineScript parameter extraction
-│   ├── backtest.py         # Core backtest engine
-│   └── validator.py        # TradingView comparison
+│   ├── indicators.py           # EMA, RMA, ATR, ADX, RSI, MACD, etc.
+│   ├── parser.py               # PineScript parameter extraction
+│   ├── backtest.py             # Core backtest engine
+│   └── validator.py            # TradingView comparison
 ├── tests/
 │   ├── __init__.py
-│   └── test_indicators.py  # Indicator unit tests
+│   └── test_indicators.py      # Indicator unit tests
 └── docs/
     ├── 01-engine-architecture.md
     ├── 02-accuracy-testing.md
@@ -63,12 +104,23 @@ cd wale-pinescript-engine
 
 # Install dependencies
 pip install -r requirements.txt
-
-# Or install individually
-pip install numpy pandas scipy openpyxl matplotlib
 ```
 
-### Basic Usage
+### GUI Application
+
+```bash
+# Launch the desktop application
+python app.py
+```
+
+**Using the GUI:**
+1. Enter your Databento API key (or load a CSV file)
+2. Enter stock symbol and select timeframe
+3. Load or paste your PineScript strategy
+4. Click "Run Backtest"
+5. View results in Summary, Trade List, and Charts tabs
+
+### CLI Usage
 
 ```bash
 python backtest_engine.py \
@@ -86,6 +138,29 @@ python backtest_engine.py \
     --excel tradingview_export.xlsx \
     --run_step1 true
 ```
+
+---
+
+## Data Sources
+
+### Databento API
+
+The application supports Databento for live/historical market data:
+
+1. Get an API key from [databento.com](https://databento.com)
+2. Enter the key in the application
+3. Select symbol, timeframe, and date range
+4. Click "Fetch Data"
+
+### CSV Files
+
+Alternatively, load data from CSV files with these columns:
+- `time` or `date` or `datetime`: Timestamp
+- `open`: Open price
+- `high`: High price
+- `low`: Low price
+- `close`: Close price
+- `volume`: Trading volume (optional)
 
 ---
 
@@ -115,6 +190,8 @@ python backtest_engine.py \
 
 | Component | Purpose |
 |-----------|---------|
+| GUI Application | Desktop interface for all operations |
+| Databento Provider | Fetch live/historical market data |
 | Parameter Parser | Extracts inputs from PineScript |
 | Indicator Library | EMA, RMA, ATR, ADX implementations |
 | Signal Logic | Entry/exit condition evaluation |
@@ -189,17 +266,6 @@ The engine performs trade-by-trade validation:
 | Exit Price | 0.01 | Allows for rounding |
 | Exit Signal | Exact | SL, Trail, PT, OB, etc. |
 | PnL | 2% | Accounts for commission differences |
-
-### Open Trade Handling
-
-If validation fails only on the final trade and that trade is still open:
-
-```python
-if is_last_trade and excel_exit_signal == "Open" and our_exit_signal == "Open":
-    if excel_exit_time > last_csv_time:
-        # Ignore this trade - dataset ended before trade closed
-        return PASS
-```
 
 ---
 
@@ -277,6 +343,24 @@ validator = TradingViewValidator(excel_path='tv_export.xlsx')
 validation = validator.validate(result.trades)
 print(validation.message)
 ```
+
+---
+
+## Requirements
+
+- Python 3.10+
+- Windows 10/11 (for EXE build)
+- Databento API key (optional, for live data)
+
+### Dependencies
+
+- PySide6 (Qt for Python) - GUI framework
+- pandas - Data manipulation
+- numpy - Numerical computing
+- scipy - Scientific computing
+- matplotlib - Charts and plotting
+- databento - Market data API
+- pyinstaller - EXE packaging
 
 ---
 
