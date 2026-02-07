@@ -24,6 +24,7 @@ def build():
     project_root = Path(__file__).parent
 
     # PyInstaller command
+    hooks_dir = project_root / "hooks"
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--name=PineScriptBacktester",
@@ -33,13 +34,17 @@ def build():
         f"--add-data={project_root / 'src'};src",
         f"--add-data={project_root / 'data_providers'};data_providers",
         f"--add-data={project_root / 'gui'};gui",
+        f"--runtime-hook={hooks_dir / 'pyi_rth_pyside6_patch.py'}",
         "--hidden-import=PySide6.QtCore",
         "--hidden-import=PySide6.QtGui",
         "--hidden-import=PySide6.QtWidgets",
         "--hidden-import=numpy",
         "--hidden-import=pandas",
+        "--hidden-import=pandas._libs.tslibs.timezones",
+        "--hidden-import=dateutil.tz",
         "--hidden-import=scipy",
         "--hidden-import=matplotlib",
+        "--hidden-import=matplotlib.backends.backend_agg",
         "--collect-all=databento",
         "--clean",
         str(project_root / "app.py"),

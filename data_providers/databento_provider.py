@@ -78,12 +78,16 @@ class DatabentoProvider:
 
         try:
             client = db.Historical(self.api_key.strip())
-            # Validate key by listing datasets (lightweight metadata call)
+            # Validate key by listing datasets - lightweight metadata call
+            # If key is invalid, this will raise an AuthenticationError
             client.metadata.list_datasets()
-            return True, "API key is valid. You can fetch data with this key."
+            return True, "API key is valid. Connection successful."
         except Exception as e:
-            msg = str(e).strip() if str(e).strip() else type(e).__name__
-            return False, f"Invalid or rejected API key: {msg}"
+            # Databento raises specific errors, we catch generic here to be safe
+            error_msg = str(e)
+            if "authentication" in error_msg.lower() or "401" in error_msg:
+                return False, "Invalid API Key (Authentication Failed)"
+            return False, f"Connection Failed: {error_msg}"
 
     def fetch_ohlcv(
         self,
