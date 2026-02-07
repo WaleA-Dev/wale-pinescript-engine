@@ -561,19 +561,32 @@ class MainWindow(QMainWindow):
 
         api_key = self.api_key_input.text().strip()
         if not api_key:
-            QMessageBox.warning(self, "Error", "Please enter an API key")
+            QMessageBox.warning(self, "Error", "Please enter an API key.")
             return
 
+        self.validate_btn.setEnabled(False)
         self.statusbar.showMessage("Validating API key...")
-        provider = DatabentoProvider(api_key)
-        valid, message = provider.validate_api_key()
+        QApplication.processEvents()
 
-        if valid:
-            QMessageBox.information(self, "Success", message)
-            self.statusbar.showMessage("API key validated successfully")
-        else:
-            QMessageBox.warning(self, "Invalid API Key", message)
-            self.statusbar.showMessage("API key validation failed")
+        try:
+            provider = DatabentoProvider(api_key)
+            valid, message = provider.validate_api_key()
+            if valid:
+                QMessageBox.information(self, "API Key Valid", message)
+                self.statusbar.showMessage("API key validated successfully.")
+            else:
+                QMessageBox.warning(self, "Invalid API Key", message)
+                self.statusbar.showMessage("API key validation failed.")
+        except Exception as e:
+            err = str(e).strip() or repr(e)
+            QMessageBox.critical(
+                self,
+                "Validation Error",
+                f"Could not validate API key:\n\n{err}",
+            )
+            self.statusbar.showMessage("API key validation error.")
+        finally:
+            self.validate_btn.setEnabled(True)
 
     def _fetch_data(self):
         """Fetch data from Databento."""

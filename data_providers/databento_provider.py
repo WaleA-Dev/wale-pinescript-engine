@@ -63,24 +63,27 @@ class DatabentoProvider:
 
     def validate_api_key(self) -> tuple[bool, str]:
         """
-        Validate the API key by making a test request.
+        Validate the API key by making a test request to Databento metadata API.
 
         Returns:
             Tuple of (is_valid, message)
         """
-        if not self.api_key:
-            return False, "No API key provided"
+        if not self.api_key or not self.api_key.strip():
+            return False, "No API key provided."
 
         try:
             import databento as db
-            client = db.Historical(self.api_key)
-            # Try to get metadata to validate key
-            client.metadata.list_datasets()
-            return True, "API key is valid"
         except ImportError:
-            return False, "databento package not installed"
+            return False, "databento package not installed. Run: pip install databento"
+
+        try:
+            client = db.Historical(self.api_key.strip())
+            # Validate key by listing datasets (lightweight metadata call)
+            client.metadata.list_datasets()
+            return True, "API key is valid. You can fetch data with this key."
         except Exception as e:
-            return False, f"Invalid API key: {str(e)}"
+            msg = str(e).strip() if str(e).strip() else type(e).__name__
+            return False, f"Invalid or rejected API key: {msg}"
 
     def fetch_ohlcv(
         self,
