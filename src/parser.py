@@ -20,7 +20,7 @@ from pathlib import Path
 class StrategyParams:
     """
     Strategy parameters extracted from PineScript.
-    
+
     This dataclass holds all configurable parameters that affect
     backtesting behavior. Default values match common strategy patterns.
     """
@@ -30,55 +30,68 @@ class StrategyParams:
     profit_target_pct: float = 4.0
     use_trailing_stop: bool = True
     use_profit_target: bool = True
-    
+
+    # ATR-based Stop/TP (from strategy.exit with stop/limit)
+    sl_atr_mult: float = 0.0  # 0 = not using ATR-based SL
+    tp_atr_mult: float = 0.0  # 0 = not using ATR-based TP
+    dynamic_exits: bool = False  # True = recalculate stop/TP every bar
+
     # Exit Conditions
     use_ob_exit: bool = False  # Overbought exit
     ob_threshold: float = 70.0
     use_os_exit: bool = False  # Oversold exit
     os_threshold: float = 30.0
-    
+
     # EMA Filter
     use_ema_filter: bool = False
     ema_length: int = 200
     ema_slope_lookback: int = 5
     ema_slope_threshold: float = 0.0
-    
+
+    # Two-EMA Trend System (emaFast > emaSlow for uptrend)
+    use_ema_crossover: bool = False
+    ema_fast_length: int = 20
+    ema_slow_length: int = 50
+
     # Entry Conditions
     entry_threshold: float = 0.0
-    
+
     # Consolidation Filter
     use_consolidation_filter: bool = False
     range_lookback: int = 20
     range_threshold: float = 0.5
-    
+
     # Momentum Confirmation
     use_momentum_confirm: bool = False
     momentum_ema_fast: int = 12
     momentum_ema_slow: int = 26
-    
+
     # ADX Filter
     use_adx_filter: bool = False
     adx_length: int = 14
     adx_threshold: float = 25.0
-    
+
     # RSI Settings
     use_rsi_filter: bool = False
     rsi_length: int = 14
     rsi_overbought: float = 70.0
     rsi_oversold: float = 30.0
-    
+    rsi_min: float = 0.0   # Custom RSI min for entry (rsiMin)
+    rsi_max: float = 100.0  # Custom RSI max for entry (rsiMax)
+
     # ATR Settings
     atr_length: int = 14
     atr_multiplier: float = 1.5
-    
+
     # Position Sizing
     order_size_pct: float = 100.0
     pyramiding: int = 0
-    
+
     # Strategy Direction
     long_only: bool = True
     short_only: bool = False
-    
+    enable_shorts: bool = False
+
     # Custom parameters (for strategy-specific inputs)
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
@@ -217,18 +230,21 @@ class PineScriptParser:
     def parse_params(self) -> StrategyParams:
         """
         Extract all input parameters from PineScript.
-        
+
         Returns:
             StrategyParams with parsed values
         """
         params = StrategyParams()
-        
+
         # Parse all input types
         self._parse_float_inputs(params)
         self._parse_int_inputs(params)
         self._parse_bool_inputs(params)
         self._parse_string_inputs(params)
-        
+
+        # Detect exit patterns (ATR-based stop/limit, dynamic recalculation)
+        self.detect_exit_pattern(params)
+
         return params
     
     def _parse_float_inputs(self, params: StrategyParams) -> None:
@@ -279,129 +295,164 @@ class PineScriptParser:
     def _assign_param(self, params: StrategyParams, name: str, value: Any) -> None:
         """
         Assign parsed value to appropriate parameter field.
-        
-        Uses fuzzy matching to handle naming variations.
+
+        Uses the ORIGINAL variable name (before normalization) for better matching.
         """
+        original_name = name
         # Normalize name
         name = name.lower().replace('_', '').replace('-', '')
-        
-        # Stop loss variations
-        if any(x in name for x in ['stoploss', 'sl', 'stoplossp']):
+
+        # --- Two-EMA system (emaFastLen / emaSlowLen) ---
+        if any(x in name for x in ['emafastlen', 'emafastlength', 'fastema', 'emafast']):
+            if isinstance(value, int):
+                params.ema_fast_length = value
+                params.use_ema_crossover = True
+                return
+        if any(x in name for x in ['emaslowlen', 'emaslowlength', 'slowema', 'emaslow']):
+            if isinstance(value, int):
+                params.ema_slow_length = value
+                params.use_ema_crossover = True
+                return
+
+        # --- RSI min/max range filter ---
+        if name in ('rsimin', 'rsiminimum', 'rsilower'):
+            if isinstance(value, (int, float)):
+                params.rsi_min = float(value)
+                params.use_rsi_filter = True
+                return
+        if name in ('rsimax', 'rsimaximum', 'rsiupper'):
+            if isinstance(value, (int, float)):
+                params.rsi_max = float(value)
+                params.use_rsi_filter = True
+                return
+
+        # --- ATR-based stop/TP multipliers ---
+        if any(x in name for x in ['slmult', 'stopatrmult', 'slatrmult', 'stopmult']):
+            if isinstance(value, (int, float)):
+                params.sl_atr_mult = float(value)
+                params.use_trailing_stop = False
+                return
+        if any(x in name for x in ['tpmult', 'targetatrmult', 'tpatrmult', 'targetmult', 'takeprofitmult']):
+            if isinstance(value, (int, float)):
+                params.tp_atr_mult = float(value)
+                params.use_profit_target = True
+                return
+
+        # --- Enable shorts ---
+        if name in ('useshorts', 'enableshorts', 'allowshorts'):
+            if isinstance(value, bool):
+                params.enable_shorts = value
+                if value:
+                    params.long_only = False
+                return
+
+        # --- Stop loss percentage ---
+        if any(x in name for x in ['stoploss', 'stoplossp']):
             if isinstance(value, (int, float)):
                 params.stop_loss_pct = float(value)
-        
-        # Trailing stop variations
-        elif any(x in name for x in ['trailing', 'trail', 'trailp']):
+                return
+
+        # --- Trailing stop ---
+        if any(x in name for x in ['trailing', 'trail', 'trailp']):
             if isinstance(value, (int, float)):
                 params.trailing_pct = float(value)
             elif isinstance(value, bool):
                 params.use_trailing_stop = value
-        
-        # Profit target variations
-        elif any(x in name for x in ['profittarget', 'takeprofit', 'tp', 'pt']):
+            return
+
+        # --- Profit target percentage ---
+        if any(x in name for x in ['profittarget', 'takeprofit']):
             if isinstance(value, (int, float)):
                 params.profit_target_pct = float(value)
             elif isinstance(value, bool):
                 params.use_profit_target = value
-        
+            return
+
         # EMA filter variations
-        elif any(x in name for x in ['emafilter', 'useema', 'ematrend']):
+        if any(x in name for x in ['emafilter', 'useema', 'ematrend']):
             if isinstance(value, bool):
                 params.use_ema_filter = value
-        elif any(x in name for x in ['emalen', 'emalength', 'emaperiod']):
+                return
+        if any(x in name for x in ['emalen', 'emalength', 'emaperiod']):
             if isinstance(value, int):
                 params.ema_length = value
-        elif 'emaslopelookback' in name:
-            if isinstance(value, int):
-                params.ema_slope_lookback = value
-        elif 'emaslopethreshold' in name:
-            if isinstance(value, (int, float)):
-                params.ema_slope_threshold = float(value)
-        
+                return
+
         # ADX filter variations
-        elif any(x in name for x in ['adxfilter', 'useadx']):
+        if any(x in name for x in ['adxfilter', 'useadx']):
             if isinstance(value, bool):
                 params.use_adx_filter = value
-        elif any(x in name for x in ['adxlen', 'adxlength', 'adxperiod']):
+                return
+        if any(x in name for x in ['adxlen', 'adxlength', 'adxperiod']):
             if isinstance(value, int):
                 params.adx_length = value
-        elif any(x in name for x in ['adxthreshold', 'adxmin']):
+                return
+        if any(x in name for x in ['adxthreshold', 'adxmin']):
             if isinstance(value, (int, float)):
                 params.adx_threshold = float(value)
-        
+                return
+
         # RSI variations
-        elif any(x in name for x in ['rsifilter', 'usersi']):
+        if any(x in name for x in ['rsifilter', 'usersi']):
             if isinstance(value, bool):
                 params.use_rsi_filter = value
-        elif any(x in name for x in ['rsilen', 'rsilength', 'rsiperiod']):
+                return
+        if any(x in name for x in ['rsilen', 'rsilength', 'rsiperiod']):
             if isinstance(value, int):
                 params.rsi_length = value
-        elif any(x in name for x in ['rsioverbought', 'rsiob']):
+                params.use_rsi_filter = True
+                return
+        if any(x in name for x in ['rsioverbought', 'rsiob']):
             if isinstance(value, (int, float)):
                 params.rsi_overbought = float(value)
-        elif any(x in name for x in ['rsioversold', 'rsios']):
+                return
+        if any(x in name for x in ['rsioversold', 'rsios']):
             if isinstance(value, (int, float)):
                 params.rsi_oversold = float(value)
-        
+                return
+
         # ATR variations
-        elif any(x in name for x in ['atrlen', 'atrlength', 'atrperiod']):
+        if any(x in name for x in ['atrlen', 'atrlength', 'atrperiod']):
             if isinstance(value, int):
                 params.atr_length = value
-        elif any(x in name for x in ['atrmult', 'atrmultiplier']):
+                return
+        if any(x in name for x in ['atrmult', 'atrmultiplier']):
             if isinstance(value, (int, float)):
                 params.atr_multiplier = float(value)
-        
+                return
+
         # Momentum variations
-        elif any(x in name for x in ['momentumconfirm', 'usemomentum']):
+        if any(x in name for x in ['momentumconfirm', 'usemomentum']):
             if isinstance(value, bool):
                 params.use_momentum_confirm = value
-        elif any(x in name for x in ['momentumfast', 'fastema']):
+                return
+        if any(x in name for x in ['momentumfast']):
             if isinstance(value, int):
                 params.momentum_ema_fast = value
-        elif any(x in name for x in ['momentumslow', 'slowema']):
+                return
+        if any(x in name for x in ['momentumslow']):
             if isinstance(value, int):
                 params.momentum_ema_slow = value
-        
-        # Consolidation filter
-        elif any(x in name for x in ['consolidation', 'rangefilter']):
-            if isinstance(value, bool):
-                params.use_consolidation_filter = value
-        elif 'rangelookback' in name:
-            if isinstance(value, int):
-                params.range_lookback = value
-        elif 'rangethreshold' in name:
-            if isinstance(value, (int, float)):
-                params.range_threshold = float(value)
-        
-        # OB/OS exit
-        elif any(x in name for x in ['obexit', 'overboughtexit']):
-            if isinstance(value, bool):
-                params.use_ob_exit = value
-        elif any(x in name for x in ['obthreshold', 'overboughtlevel']):
-            if isinstance(value, (int, float)):
-                params.ob_threshold = float(value)
-        
+                return
+
         # Order sizing
-        elif any(x in name for x in ['ordersize', 'positionsize', 'qtyp']):
+        if any(x in name for x in ['ordersize', 'positionsize', 'qtyp']):
             if isinstance(value, (int, float)):
                 params.order_size_pct = float(value)
-        
+                return
+
         # Direction
-        elif 'longonly' in name:
+        if 'longonly' in name:
             if isinstance(value, bool):
                 params.long_only = value
-        elif 'shortonly' in name:
+                return
+        if 'shortonly' in name:
             if isinstance(value, bool):
                 params.short_only = value
-        
-        # Entry threshold
-        elif 'entrythreshold' in name:
-            if isinstance(value, (int, float)):
-                params.entry_threshold = float(value)
-        
+                return
+
         # Store unmatched parameters
-        else:
-            params.custom_params[name] = value
+        params.custom_params[original_name] = value
     
     def extract_entry_conditions(self) -> List[str]:
         """
@@ -465,6 +516,61 @@ class PineScriptParser:
         
         return indicators
     
+    def detect_exit_pattern(self, params: StrategyParams) -> None:
+        """
+        Detect strategy.exit() patterns to determine exit behavior.
+
+        Detects:
+        - ATR-based stop/limit in strategy.exit()
+        - Dynamic recalculation (strategy.exit inside position_size check)
+        - stop and limit parameter usage
+        """
+        content = self._clean_content
+
+        # Check for strategy.exit with stop and limit
+        exit_with_stop_limit = re.search(
+            r'strategy\.exit\s*\([^)]*stop\s*=\s*(\w+)[^)]*limit\s*=\s*(\w+)',
+            content, re.DOTALL
+        )
+        if not exit_with_stop_limit:
+            # Try reverse order (limit before stop)
+            exit_with_stop_limit = re.search(
+                r'strategy\.exit\s*\([^)]*limit\s*=\s*(\w+)[^)]*stop\s*=\s*(\w+)',
+                content, re.DOTALL
+            )
+
+        if exit_with_stop_limit:
+            # Check if stop/limit are calculated using ATR
+            stop_var = exit_with_stop_limit.group(1) if exit_with_stop_limit else None
+            limit_var = exit_with_stop_limit.group(2) if exit_with_stop_limit else None
+
+            # Look for ATR-based stop calculation: var = price - atr * mult
+            if stop_var:
+                stop_calc = re.search(
+                    rf'{stop_var}\s*=\s*\w+\s*[-+]\s*\w+\s*\*\s*(\w+)',
+                    content
+                )
+
+            # Look for ATR-based limit calculation: var = price + atr * mult
+            if limit_var:
+                limit_calc = re.search(
+                    rf'{limit_var}\s*=\s*\w+\s*[+\-]\s*\w+\s*\*\s*(\w+)',
+                    content
+                )
+
+        # Check if strategy.exit is inside position_size check (dynamic recalculation)
+        dynamic_pattern = re.search(
+            r'if\s+strategy\.position_size\s*[><=!]+\s*0\s*\n.*?strategy\.exit',
+            content, re.DOTALL
+        )
+        if dynamic_pattern:
+            params.dynamic_exits = True
+
+        # If we found ATR multipliers through input parsing, mark them
+        if params.sl_atr_mult > 0 or params.tp_atr_mult > 0:
+            params.dynamic_exits = True
+            params.use_trailing_stop = False  # ATR stop/limit, not trailing
+
     def to_dict(self) -> Dict[str, Any]:
         """
         Export all parsed data as a dictionary.
