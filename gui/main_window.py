@@ -184,21 +184,33 @@ class MainWindow(QMainWindow):
 
         data_layout.addLayout(api_layout)
 
-        # Symbol and timeframe
+        # Symbol and exchange
         symbol_layout = QHBoxLayout()
         self.symbol_input = QLineEdit()
-        self.symbol_input.setPlaceholderText("NDAQ")
+        self.symbol_input.setPlaceholderText("e.g. NDAQ, SCHD, AAPL")
         self.symbol_input.setText("NDAQ")
         symbol_layout.addWidget(QLabel("Symbol:"))
         symbol_layout.addWidget(self.symbol_input)
 
+        self.exchange_combo = QComboBox()
+        self.exchange_combo.addItems(['AUTO', 'NASDAQ', 'NYSE', 'AMEX'])
+        self.exchange_combo.setCurrentText('AUTO')
+        self.exchange_combo.setToolTip("Auto-detect exchange from ticker, or select manually")
+        symbol_layout.addWidget(QLabel("Exchange:"))
+        symbol_layout.addWidget(self.exchange_combo)
+
+        data_layout.addLayout(symbol_layout)
+
+        # Timeframe
+        tf_layout = QHBoxLayout()
         self.timeframe_combo = QComboBox()
         self.timeframe_combo.addItems(['1m', '5m', '15m', '30m', '1H', '4H', '1D'])
         self.timeframe_combo.setCurrentText('1H')
-        symbol_layout.addWidget(QLabel("Timeframe:"))
-        symbol_layout.addWidget(self.timeframe_combo)
+        tf_layout.addWidget(QLabel("Timeframe:"))
+        tf_layout.addWidget(self.timeframe_combo)
+        tf_layout.addStretch()
 
-        data_layout.addLayout(symbol_layout)
+        data_layout.addLayout(tf_layout)
 
         # Date range
         date_layout = QHBoxLayout()
@@ -655,7 +667,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please enter a symbol")
             return
 
-        self.statusbar.showMessage(f"Fetching {symbol} data...")
+        exchange = self.exchange_combo.currentText()
+        self.statusbar.showMessage(f"Fetching {symbol} data from {exchange}...")
         self.fetch_btn.setEnabled(False)
 
         try:
@@ -672,23 +685,54 @@ class MainWindow(QMainWindow):
                 self.end_date.date().day()
             )
 
+            # Auto-detect exchange for display
+            if exchange == 'AUTO':
+                detected = DatabentoProvider.detect_exchange(symbol)
+                self.statusbar.showMessage(f"Auto-detected {symbol} on {detected}. Fetching...")
+
             df = provider.fetch_ohlcv(
                 symbol=symbol,
                 start_date=start,
                 end_date=end,
                 timeframe=self.timeframe_combo.currentText(),
+                dataset=exchange,
                 rth_only=self.rth_only.isChecked()
             )
 
-            self.current_data = df
-            self.data_status.setText(
-                f"Loaded {len(df)} bars | {df['time'].min()} to {df['time'].max()}"
-            )
-            self.data_status.setStyleSheet("color: #2ecc71;")
-            self.statusbar.showMessage(f"Loaded {len(df)} bars for {symbol}")
+            if df.empty:
+                QMessageBox.warning(self, "No Data",
+                    f"No data returned for {symbol}.\n\n"
+                    f"Tips:\n"
+                    f"- Databento data starts from May 2018\n"
+                    f"- Try a different exchange (NASDAQ vs NYSE/AMEX)\n"
+                    f"- Check the symbol spelling")
+                self.data_status.setText("No data returned")
+                self.data_status.setStyleSheet("color: #e74c3c;")
+            else:
+                self.current_data = df
+                self.data_status.setText(
+                    f"Loaded {len(df)} bars | {df['time'].min()} to {df['time'].max()}"
+                )
+                self.data_status.setStyleSheet("color: #2ecc71;")
+                self.statusbar.showMessage(f"Loaded {len(df)} bars for {symbol}")
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to fetch data: {str(e)}")
+            error_msg = str(e)
+            # Provide helpful hints for common errors
+            if 'data_start_before_available_start' in error_msg:
+                error_msg = (
+                    f"Start date is before data availability.\n\n"
+                    f"Databento XNAS/XNYS data starts from May 2018.\n"
+                    f"Please set a start date of 2018-05-01 or later."
+                )
+            elif 'not_found' in error_msg.lower():
+                error_msg = (
+                    f"Symbol '{symbol}' not found on selected exchange.\n\n"
+                    f"Try switching exchange:\n"
+                    f"- NASDAQ: tech stocks (AAPL, MSFT, NDAQ)\n"
+                    f"- NYSE/AMEX: ETFs and blue chips (SCHD, SPY, JPM)"
+                )
+            QMessageBox.critical(self, "Error", f"Failed to fetch data: {error_msg}")
             self.statusbar.showMessage("Data fetch failed")
 
         finally:
@@ -827,7 +871,8 @@ class MainWindow(QMainWindow):
 
         try:
             import matplotlib
-            matplotlib.use('Agg')
+            if matplotlib.get_backend().lower() != 'agg':
+                matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             import io
 

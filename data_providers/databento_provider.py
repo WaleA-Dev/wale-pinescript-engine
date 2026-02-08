@@ -22,7 +22,41 @@ class DatabentoProvider:
         'US_EQUITIES': 'XNAS.ITCH',  # NASDAQ
         'NASDAQ': 'XNAS.ITCH',
         'NYSE': 'XNYS.PILLAR',
+        'AMEX': 'XNYS.PILLAR',       # AMEX/NYSE ARCA uses same feed
+        'NYSE_ARCA': 'XNYS.PILLAR',
         'CME': 'GLBX.MDP3',
+    }
+
+    # Earliest data availability per dataset
+    DATASET_START_DATES = {
+        'XNAS.ITCH': datetime(2018, 5, 1),
+        'XNYS.PILLAR': datetime(2018, 5, 1),
+        'GLBX.MDP3': datetime(2010, 1, 1),
+    }
+
+    # Common ticker → exchange mapping for auto-detection
+    # NYSE/AMEX tickers (ETFs, large-cap NYSE stocks)
+    NYSE_TICKERS = {
+        'SCHD', 'SPY', 'DIA', 'IWM', 'VTI', 'VOO', 'VEA', 'VWO', 'BND',
+        'GLD', 'SLV', 'XLF', 'XLE', 'XLV', 'XLK', 'XLI', 'XLU', 'XLP',
+        'XLY', 'XLB', 'XLRE', 'VNQ', 'TLT', 'IEF', 'HYG', 'LQD', 'AGG',
+        'EFA', 'EEM', 'VIG', 'ARKK', 'ARKG', 'ARKW', 'ARKF',
+        'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'USB', 'PNC',
+        'JNJ', 'UNH', 'PFE', 'MRK', 'ABT', 'TMO', 'ABBV',
+        'KO', 'PEP', 'PG', 'WMT', 'HD', 'MCD', 'DIS', 'NKE',
+        'BA', 'CAT', 'GE', 'MMM', 'HON', 'UPS', 'RTX',
+        'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'VLO', 'MPC',
+        'V', 'MA', 'AXP', 'BRK.B', 'T', 'VZ',
+    }
+
+    # NASDAQ tickers
+    NASDAQ_TICKERS = {
+        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'META', 'NVDA', 'TSLA',
+        'NDAQ', 'AMD', 'INTC', 'CRM', 'ORCL', 'ADBE', 'NFLX', 'PYPL',
+        'AVGO', 'QCOM', 'TXN', 'CSCO', 'CMCSA', 'COST', 'AMGN', 'SBUX',
+        'ISRG', 'MDLZ', 'GILD', 'ADP', 'BKNG', 'REGN', 'LRCX', 'KLAC',
+        'SNPS', 'CDNS', 'MRVL', 'FTNT', 'PANW', 'CRWD', 'DDOG', 'ZS',
+        'QQQ', 'TQQQ', 'SQQQ',
     }
 
     TIMEFRAME_MAP = {
@@ -34,6 +68,17 @@ class DatabentoProvider:
         '4H': 14400,
         '1D': 86400,
     }
+
+    @classmethod
+    def detect_exchange(cls, symbol: str) -> str:
+        """Auto-detect exchange for a given ticker symbol."""
+        sym = symbol.upper().strip()
+        if sym in cls.NASDAQ_TICKERS:
+            return 'NASDAQ'
+        if sym in cls.NYSE_TICKERS:
+            return 'NYSE'
+        # Default: try NASDAQ first (most common for tech stocks)
+        return 'NASDAQ'
 
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -95,7 +140,7 @@ class DatabentoProvider:
         start_date: datetime,
         end_date: datetime,
         timeframe: str = '1H',
-        dataset: str = 'NASDAQ',
+        dataset: str = 'AUTO',
         rth_only: bool = True,
     ) -> pd.DataFrame:
         """
@@ -106,7 +151,7 @@ class DatabentoProvider:
             start_date: Start date for data
             end_date: End date for data
             timeframe: Candle timeframe ('1m', '5m', '15m', '1H', '4H', '1D')
-            dataset: Exchange dataset ('NASDAQ', 'NYSE', 'CME')
+            dataset: Exchange dataset ('NASDAQ', 'NYSE', 'AMEX', 'CME', 'AUTO')
             rth_only: If True, filter to Regular Trading Hours only
 
         Returns:
@@ -117,11 +162,35 @@ class DatabentoProvider:
         except ImportError:
             raise ImportError("databento package not installed. Run: pip install databento")
 
-        # Get dataset
+        # Auto-detect exchange if needed
+        if dataset.upper() == 'AUTO':
+            dataset = self.detect_exchange(symbol)
+
+        # Get dataset identifier
         ds = self.DATASETS.get(dataset.upper(), self.DATASETS['NASDAQ'])
+
+        # Clamp start date to dataset availability
+        min_date = self.DATASET_START_DATES.get(ds, datetime(2018, 5, 1))
+        if start_date < min_date:
+            print(f"Note: {ds} data starts {min_date.strftime('%Y-%m-%d')}. Clamping start date.")
+            start_date = min_date
+
+        # Ensure end_date is after start_date
+        if end_date <= start_date:
+            end_date = start_date + timedelta(days=30)
 
         # Get timeframe in seconds
         tf_seconds = self.TIMEFRAME_MAP.get(timeframe, 3600)
+
+        # Build schema string
+        if tf_seconds < 60:
+            schema = 'ohlcv-1s'
+        elif tf_seconds < 3600:
+            schema = f'ohlcv-{tf_seconds // 60}m'
+        elif tf_seconds < 86400:
+            schema = f'ohlcv-{tf_seconds // 3600}h'
+        else:
+            schema = 'ohlcv-1d'
 
         # Fetch data
         client = db.Historical(self.api_key)
@@ -129,7 +198,7 @@ class DatabentoProvider:
         data = client.timeseries.get_range(
             dataset=ds,
             symbols=[symbol],
-            schema='ohlcv-1s' if tf_seconds < 60 else f'ohlcv-{tf_seconds // 60}m' if tf_seconds < 3600 else f'ohlcv-{tf_seconds // 3600}h' if tf_seconds < 86400 else 'ohlcv-1d',
+            schema=schema,
             start=start_date.strftime('%Y-%m-%d'),
             end=end_date.strftime('%Y-%m-%d'),
         )
@@ -142,14 +211,6 @@ class DatabentoProvider:
 
         # Standardize column names
         df = df.reset_index()
-        column_map = {
-            'ts_event': 'time',
-            'open': 'open',
-            'high': 'high',
-            'low': 'low',
-            'close': 'close',
-            'volume': 'volume',
-        }
 
         # Handle different column names from databento
         if 'ts_event' in df.columns:
@@ -178,6 +239,9 @@ class DatabentoProvider:
         """
         Filter DataFrame to Regular Trading Hours (09:30 - 16:00 ET).
 
+        Handles both UTC and ET timestamps. Databento returns UTC timestamps,
+        so we filter to 13:30 - 21:00 UTC to cover both EST and EDT.
+
         Args:
             df: DataFrame with 'time' column
 
@@ -187,23 +251,31 @@ class DatabentoProvider:
         if df.empty:
             return df
 
-        # Convert to ET
         df = df.copy()
         df['hour'] = df['time'].dt.hour
         df['minute'] = df['time'].dt.minute
-
-        # RTH is 09:30 - 16:00 ET
-        # For simplicity, we use UTC offsets
-        # ET is UTC-5 (EST) or UTC-4 (EDT)
-        # RTH in UTC: roughly 14:30 - 21:00 (EST) or 13:30 - 20:00 (EDT)
-
-        # Simple filter based on typical ETH window
         df['total_minutes'] = df['hour'] * 60 + df['minute']
 
-        # Filter to 09:30 - 16:00 ET (assuming times are in ET)
-        # If UTC, adjust: 14:30-21:00 = 870-1260 minutes
-        rth_mask = (df['total_minutes'] >= 570) & (df['total_minutes'] < 960)  # 09:30 - 16:00
+        # Detect if timestamps are in UTC (have timezone info or hours > 12)
+        # Databento always returns UTC timestamps
+        is_utc = True
+        if hasattr(df['time'].dtype, 'tz') and df['time'].dtype.tz is not None:
+            is_utc = True
+        elif df['hour'].median() > 12:
+            is_utc = True
+        else:
+            is_utc = False
 
+        if is_utc:
+            # UTC: US RTH is roughly 13:30-21:00 (covers both EST and EDT)
+            rth_start = 13 * 60 + 30  # 13:30 UTC
+            rth_end = 21 * 60         # 21:00 UTC
+        else:
+            # ET: 09:30 - 16:00
+            rth_start = 9 * 60 + 30   # 09:30 ET
+            rth_end = 16 * 60         # 16:00 ET
+
+        rth_mask = (df['total_minutes'] >= rth_start) & (df['total_minutes'] < rth_end)
         df = df[rth_mask].drop(columns=['hour', 'minute', 'total_minutes'])
 
         return df.reset_index(drop=True)

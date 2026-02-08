@@ -18,12 +18,16 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Pre-import dateutil and pandas BEFORE PySide6 to avoid shiboken/dateutil conflict
+# Pre-import problematic modules BEFORE PySide6 to avoid shiboken/dateutil conflict
 # in PyInstaller builds. PySide6's shibokensupport hooks into imports and tries to
 # inspect source code, which fails in frozen apps.
+# Order matters: dateutil first, then pandas, then matplotlib with Agg backend.
 try:
     import dateutil.tz  # noqa: F401
     import pandas  # noqa: F401
+    import matplotlib  # noqa: F401
+    matplotlib.use('Agg')
+    import matplotlib.pyplot  # noqa: F401
 except Exception:
     pass
 

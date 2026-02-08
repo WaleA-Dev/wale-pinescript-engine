@@ -1,18 +1,27 @@
 """
-PyInstaller runtime hook to fix PySide6/shiboken/dateutil conflict.
+PyInstaller runtime hook to fix PySide6/shiboken/dateutil/matplotlib conflict.
 
 The issue: PySide6's shibokensupport hooks into the import system and tries
 to inspect source code. In frozen PyInstaller apps, source isn't available,
 causing '_SixMetaPathImporter' has no attribute '_path' errors.
 
-Fix: Import dateutil.tz before PySide6 loads, so shibokensupport doesn't
-intercept it. Also patch the shiboken feature import if needed.
+Fix: Import dateutil.tz and matplotlib before PySide6 loads, so shibokensupport
+doesn't intercept them. Also patch the shiboken feature import if needed.
 """
 import sys
 
 # Pre-import dateutil before PySide6's shiboken hooks can intercept it
 try:
     import dateutil.tz
+except Exception:
+    pass
+
+# Pre-import matplotlib with Agg backend before PySide6 can interfere
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot
+    import matplotlib.backends.backend_agg
 except Exception:
     pass
 

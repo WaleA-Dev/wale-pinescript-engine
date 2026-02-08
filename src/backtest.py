@@ -7,11 +7,16 @@ This module implements the core backtesting loop with:
 3. Dynamic ATR-based stop/TP recalculation per bar (matching TradingView)
 4. Position sizing with percent_of_equity support
 5. Trade tracking with detailed statistics
+6. Custom oscillator entry (Saty Phase pattern)
+7. Consolidation filter with EMA slope, range compression, momentum, ADX
+8. Trailing stop with separate activation threshold
+9. strategy.close() exit semantics (market close at next bar open)
 
 The execution model matches TradingView's default behavior:
 - process_orders_on_close = false
 - Stops/limits trigger intrabar at the specified price (or gap open if beyond)
 - strategy.exit() recalculates stop/limit levels every bar
+- strategy.close() queues market close for next bar open
 """
 
 import numpy as np
@@ -21,8 +26,7 @@ from typing import Optional, List, Dict, Any, Callable
 from datetime import datetime
 from enum import Enum
 
-from .indicators import ema, atr, adx, rsi, crossover, crossunder
-from .parser import StrategyParams
+from .indicators import ema, atr, adx, rsi, crossover, crossunder, highest, lowest
 
 
 class OrderType(Enum):
@@ -40,6 +44,7 @@ class ExitSignal(Enum):
     SIGNAL_EXIT = "Signal"
     TIME_EXIT = "Time"
     OPEN = "Open"
+    MARGIN_CALL = "Margin call"
 
 
 @dataclass
@@ -56,12 +61,7 @@ class BacktestConfig:
 
 @dataclass
 class Trade:
-    """
-    Represents a single trade with full tracking.
-
-    Tracks entry/exit details, P&L, and intrabar extremes for
-    stop loss and take profit calculations.
-    """
+    """Represents a single trade with full tracking."""
     trade_id: int
     entry_time: datetime
     entry_price: float
@@ -84,10 +84,11 @@ class Trade:
     # Intrabar tracking
     max_high: float = 0.0
     min_low: float = float('inf')
+    highest_since_entry: float = 0.0  # Highest close since entry (for trailing)
     max_favorable_excursion: float = 0.0
     max_adverse_excursion: float = 0.0
 
-    # Stop management - these are recalculated per bar for dynamic exits
+    # Stop management
     stop_loss_price: Optional[float] = None
     trailing_active: bool = False
     trail_stop: Optional[float] = None
@@ -186,14 +187,16 @@ class BacktestEngine:
        - Exit orders become active on the NEXT bar
     """
 
-    def __init__(self, config: BacktestConfig = None, params: StrategyParams = None):
+    def __init__(self, config: BacktestConfig = None, params=None):
         self.config = config or BacktestConfig()
+        # Accept StrategyParams from the new parser
+        from .parser import StrategyParams
         self.params = params or StrategyParams()
 
         # State
         self.equity = self.config.initial_capital
         self.cash = self.config.initial_capital
-        self.position = 0  # Current position size
+        self.position = 0
         self.current_trade: Optional[Trade] = None
         self.trades: List[Trade] = []
         self.trade_counter = 0
@@ -265,7 +268,7 @@ class BacktestEngine:
                 self._record_equity(bar_close)
                 continue
 
-            # 1. Execute pending exit at open (from signal exits)
+            # 1. Execute pending exit at open (from signal exits like strategy.close)
             if self.pending_exit and self.current_trade:
                 self._execute_exit(bar_time, bar_open, i, self.pending_exit_signal)
                 self.pending_exit = False
@@ -284,6 +287,7 @@ class BacktestEngine:
                 # Update intrabar extremes
                 trade.max_high = max(trade.max_high, bar_high)
                 trade.min_low = min(trade.min_low, bar_low)
+                trade.highest_since_entry = max(trade.highest_since_entry, bar_close)
 
                 # Calculate excursions
                 if trade.direction == "long":
@@ -318,62 +322,94 @@ class BacktestEngine:
                             if self.params.tp_atr_mult > 0:
                                 trade.profit_target_price = trade.entry_price - (current_atr * self.params.tp_atr_mult)
 
-                # Determine exit priority when both stop and TP could trigger
-                stop_hit = False
-                target_hit = False
+                # --- Check exit conditions for strategy.close() type exits ---
+                # These check at bar close and queue exit for next bar open
+                exit_queued = False
 
-                if trade.stop_loss_price:
-                    stop_hit = self._check_stop_loss(bar_open, bar_low, bar_high, trade)
-                if trade.profit_target_price:
-                    target_hit = self._check_profit_target(bar_open, bar_high, bar_low, trade)
+                if self.params.exit_type in ("strategy_close", "mixed"):
+                    # Percentage-based stop loss (checked at close)
+                    if trade.stop_loss_price and not self.params.dynamic_exits:
+                        if trade.direction == "long" and bar_close <= trade.stop_loss_price:
+                            self.pending_exit = True
+                            self.pending_exit_signal = ExitSignal.STOP_LOSS
+                            exit_queued = True
 
-                if stop_hit and target_hit:
-                    # Both could trigger - use bar direction to determine priority
-                    # Bearish bar (close < open) → stop likely hit first
-                    # Bullish bar (close >= open) → target likely hit first
-                    if bar_close < bar_open:
-                        # Bearish: stop first
+                    # Trailing stop (checked at close for strategy.close patterns)
+                    if not exit_queued and self.params.use_trailing_stop and self.params.trailing_pct > 0:
+                        self._update_trailing_stop_close(bar_close, trade)
+                        if trade.trailing_active and trade.trail_stop:
+                            if trade.direction == "long" and bar_close <= trade.trail_stop:
+                                self.pending_exit = True
+                                self.pending_exit_signal = ExitSignal.TRAILING_STOP
+                                exit_queued = True
+
+                    # Overbought exit (oscillator-based, checked at close)
+                    if not exit_queued and self.params.use_ob_exit and 'oscillator' in df.columns:
+                        if i > 0:
+                            osc_curr = df.iloc[i]['oscillator']
+                            osc_prev = df.iloc[i-1]['oscillator']
+                            if not np.isnan(osc_curr) and not np.isnan(osc_prev):
+                                # ta.crossunder(oscillator, ob_threshold)
+                                if osc_prev >= self.params.ob_threshold and osc_curr < self.params.ob_threshold:
+                                    self.pending_exit = True
+                                    self.pending_exit_signal = ExitSignal.OB_EXIT
+                                    exit_queued = True
+
+                # --- Check exit conditions for strategy.exit() type exits ---
+                # These execute intrabar at stop/limit prices
+                if not exit_queued and self.params.exit_type in ("strategy_exit", "mixed"):
+                    stop_hit = False
+                    target_hit = False
+
+                    if trade.stop_loss_price and self.params.dynamic_exits:
+                        stop_hit = self._check_stop_loss(bar_open, bar_low, bar_high, trade)
+                    if trade.profit_target_price:
+                        target_hit = self._check_profit_target(bar_open, bar_high, bar_low, trade)
+
+                    if stop_hit and target_hit:
+                        if bar_close < bar_open:
+                            exit_price = self._get_stop_fill_price(bar_open, bar_low, bar_high, trade.stop_loss_price, trade.direction)
+                            self._execute_exit(bar_time, exit_price, i, ExitSignal.STOP_LOSS)
+                        else:
+                            exit_price = self._get_target_fill_price(bar_open, bar_high, bar_low, trade.profit_target_price, trade.direction)
+                            self._execute_exit(bar_time, exit_price, i, ExitSignal.PROFIT_TARGET)
+                        self._record_equity(bar_close)
+                        continue
+                    elif stop_hit:
                         exit_price = self._get_stop_fill_price(bar_open, bar_low, bar_high, trade.stop_loss_price, trade.direction)
                         self._execute_exit(bar_time, exit_price, i, ExitSignal.STOP_LOSS)
-                    else:
-                        # Bullish: target first
+                        self._record_equity(bar_close)
+                        continue
+                    elif target_hit:
                         exit_price = self._get_target_fill_price(bar_open, bar_high, bar_low, trade.profit_target_price, trade.direction)
                         self._execute_exit(bar_time, exit_price, i, ExitSignal.PROFIT_TARGET)
-                    self._record_equity(bar_close)
-                    continue
-                elif stop_hit:
-                    exit_price = self._get_stop_fill_price(bar_open, bar_low, bar_high, trade.stop_loss_price, trade.direction)
-                    self._execute_exit(bar_time, exit_price, i, ExitSignal.STOP_LOSS)
-                    self._record_equity(bar_close)
-                    continue
-                elif target_hit:
-                    exit_price = self._get_target_fill_price(bar_open, bar_high, bar_low, trade.profit_target_price, trade.direction)
-                    self._execute_exit(bar_time, exit_price, i, ExitSignal.PROFIT_TARGET)
-                    self._record_equity(bar_close)
-                    continue
+                        self._record_equity(bar_close)
+                        continue
 
-                # Check trailing stop (only if explicitly enabled)
-                if self.params.use_trailing_stop and self.params.trailing_pct > 0:
-                    self._update_trailing_stop(bar_high, bar_low, trade)
-                    if trade.trailing_active and trade.trail_stop:
-                        if self._check_trailing_stop(bar_open, bar_low, bar_high, trade):
-                            exit_price = self._get_stop_fill_price(bar_open, bar_low, bar_high, trade.trail_stop, trade.direction)
-                            self._execute_exit(bar_time, exit_price, i, ExitSignal.TRAILING_STOP)
-                            self._record_equity(bar_close)
-                            continue
+                    # Check trailing stop (intrabar for strategy.exit)
+                    if self.params.use_trailing_stop and self.params.trailing_pct > 0:
+                        if self.params.exit_type == "strategy_exit":
+                            self._update_trailing_stop(bar_high, bar_low, trade)
+                            if trade.trailing_active and trade.trail_stop:
+                                if self._check_trailing_stop(bar_open, bar_low, bar_high, trade):
+                                    exit_price = self._get_stop_fill_price(bar_open, bar_low, bar_high, trade.trail_stop, trade.direction)
+                                    self._execute_exit(bar_time, exit_price, i, ExitSignal.TRAILING_STOP)
+                                    self._record_equity(bar_close)
+                                    continue
 
                 # Check custom exit signals
-                if exit_signal_func and exit_signal_func(df, i, self.params, trade):
-                    self.pending_exit = True
-                    self.pending_exit_signal = ExitSignal.SIGNAL_EXIT
+                if not exit_queued and exit_signal_func and self.current_trade:
+                    if exit_signal_func(df, i, self.params, self.current_trade):
+                        self.pending_exit = True
+                        self.pending_exit_signal = ExitSignal.SIGNAL_EXIT
 
             elif self.current_trade and not self.current_trade.exit_orders_active:
                 # Trade just entered this bar - count it but exit orders not yet active
-                # At bar close, strategy.exit() will be called, making orders active next bar
                 trade = self.current_trade
                 trade.bars_in_trade += 1
                 trade.max_high = max(trade.max_high, bar_high)
                 trade.min_low = min(trade.min_low, bar_low)
+                trade.highest_since_entry = max(trade.highest_since_entry, bar_close)
 
                 # Calculate excursions
                 if trade.direction == "long":
@@ -423,33 +459,122 @@ class BacktestEngine:
         # ATR for stops (always compute)
         df['atr'] = atr(high, low, close, self.params.atr_length)
 
+        # EMA200 (for filter and consolidation)
+        if self.params.use_ema_filter or self.params.use_consolidation_filter:
+            df['ema200'] = ema(close, self.params.ema_length)
+
         # Two-EMA crossover system
         if self.params.use_ema_crossover:
             df['ema_fast'] = ema(close, self.params.ema_fast_length)
             df['ema_slow'] = ema(close, self.params.ema_slow_length)
 
         # Single EMA filter
-        if self.params.use_ema_filter:
-            df['ema'] = ema(close, self.params.ema_length)
+        if self.params.use_ema_filter and 'ema200' not in df.columns:
+            df['ema200'] = ema(close, self.params.ema_length)
 
         # ADX
-        if self.params.use_adx_filter:
+        if self.params.use_adx_filter or self.params.use_consolidation_filter:
             df['adx'] = adx(high, low, close, self.params.adx_length)
 
         # RSI
         if self.params.use_rsi_filter:
             df['rsi'] = rsi(close, self.params.rsi_length)
 
-        # Momentum EMAs (separate from crossover EMAs)
-        if self.params.use_momentum_confirm:
+        # Momentum EMAs
+        if self.params.use_momentum_confirm or self.params.use_consolidation_filter:
             df['momentum_fast'] = ema(close, self.params.momentum_ema_fast)
             df['momentum_slow'] = ema(close, self.params.momentum_ema_slow)
 
+        # Custom oscillator (Saty Phase pattern)
+        if self.params.use_oscillator_entry:
+            osc_ema = ema(close, self.params.oscillator_ema_len)
+            osc_atr = atr(high, low, close, self.params.oscillator_atr_len)
+
+            n = len(close)
+            raw_osc = np.full(n, np.nan)
+            for j in range(n):
+                if not np.isnan(osc_ema[j]) and not np.isnan(osc_atr[j]) and osc_atr[j] != 0:
+                    raw_osc[j] = ((close[j] - osc_ema[j]) / (self.params.oscillator_atr_mult * osc_atr[j])) * self.params.oscillator_scale
+
+            # Smooth with EMA
+            df['oscillator'] = ema(raw_osc, self.params.oscillator_smooth_len)
+
+        # Consolidation filter
+        if self.params.use_consolidation_filter:
+            df['is_consolidating'] = self._compute_consolidation(df)
+
         return df
+
+    def _compute_consolidation(self, df: pd.DataFrame) -> np.ndarray:
+        """
+        Compute consolidation filter matching Saty Phase logic.
+
+        Consolidation = any of:
+        1. EMA200 slope < threshold% over lookback bars
+        2. Price range < threshold% over lookback bars
+        3. Momentum EMA fast < slow (no upward momentum)
+        4. ADX < threshold (no trend)
+        """
+        n = len(df)
+        is_consolidating = np.zeros(n, dtype=bool)
+
+        close = df['close'].values
+        ema200 = df['ema200'].values if 'ema200' in df.columns else np.full(n, np.nan)
+        adx_vals = df['adx'].values if 'adx' in df.columns else np.full(n, np.nan)
+        mom_fast = df['momentum_fast'].values if 'momentum_fast' in df.columns else np.full(n, np.nan)
+        mom_slow = df['momentum_slow'].values if 'momentum_slow' in df.columns else np.full(n, np.nan)
+        high = df['high'].values
+        low = df['low'].values
+
+        slope_lookback = self.params.ema_slope_check_lookback
+        slope_threshold = self.params.ema_slope_check_threshold
+        range_lookback = self.params.consolidation_lookback
+        range_threshold = self.params.consolidation_threshold
+        adx_threshold = self.params.adx_threshold
+
+        for i in range(n):
+            conditions = []
+
+            # 1. EMA200 slope check
+            if i >= slope_lookback and not np.isnan(ema200[i]) and not np.isnan(ema200[i - slope_lookback]):
+                if ema200[i - slope_lookback] != 0:
+                    slope_pct = ((ema200[i] - ema200[i - slope_lookback]) / ema200[i - slope_lookback]) * 100
+                    conditions.append(slope_pct < slope_threshold)
+
+            # 2. Price range compression
+            if i >= range_lookback:
+                h_window = high[i - range_lookback + 1: i + 1]
+                l_window = low[i - range_lookback + 1: i + 1]
+                if len(h_window) > 0 and not np.isnan(h_window).any() and not np.isnan(l_window).any():
+                    h_max = np.max(h_window)
+                    l_min = np.min(l_window)
+                    if l_min > 0:
+                        price_range_pct = ((h_max - l_min) / l_min) * 100
+                        conditions.append(price_range_pct < range_threshold)
+
+            # 3. Momentum check (fast < slow = no upward momentum)
+            if not np.isnan(mom_fast[i]) and not np.isnan(mom_slow[i]):
+                conditions.append(mom_fast[i] < mom_slow[i])
+
+            # 4. ADX check (low ADX = no trend)
+            if not np.isnan(adx_vals[i]):
+                conditions.append(adx_vals[i] < adx_threshold)
+
+            # Consolidating only if ALL conditions agree (market clearly consolidating)
+            if conditions:
+                is_consolidating[i] = all(conditions)
+
+        return is_consolidating
 
     def _default_entry_signal(self, df: pd.DataFrame, bar_idx: int) -> Optional[str]:
         """
         Default entry signal logic matching TradingView PineScript patterns.
+
+        Supports:
+        - Oscillator crossover entry (Saty Phase pattern)
+        - Two-EMA crossover entry
+        - RSI/ADX/Momentum filters
+        - Consolidation filter
 
         Returns "long", "short", or None.
         """
@@ -460,10 +585,60 @@ class BacktestEngine:
         if self.current_trade:
             return None
 
+        # --- Consolidation filter: block entry during consolidation ---
+        if self.params.use_consolidation_filter:
+            if 'is_consolidating' in df.columns:
+                if df.iloc[bar_idx]['is_consolidating']:
+                    return None
+
+        # --- Oscillator crossover entry ---
+        if self.params.use_oscillator_entry:
+            if 'oscillator' not in df.columns:
+                return None
+
+            osc_curr = df.iloc[bar_idx]['oscillator']
+            osc_prev = df.iloc[bar_idx - 1]['oscillator']
+
+            if np.isnan(osc_curr) or np.isnan(osc_prev):
+                return None
+
+            threshold = self.params.entry_threshold
+
+            # Normal entry: oscillator crosses above threshold
+            normal_entry = (osc_prev <= threshold and osc_curr > threshold)
+
+            # Extreme entry: oscillator crosses from extreme level through threshold
+            extreme_entry = False
+            if self.params.use_extreme_entry:
+                extreme_level = self.params.extreme_threshold
+                # Check if oscillator was below extreme level recently and now crossing above threshold
+                if osc_prev <= threshold and osc_curr > threshold:
+                    # Look back to see if it was at extreme recently
+                    lookback = min(bar_idx, 10)
+                    for k in range(1, lookback + 1):
+                        if bar_idx - k >= 0:
+                            prev_osc = df.iloc[bar_idx - k]['oscillator']
+                            if not np.isnan(prev_osc) and prev_osc <= extreme_level:
+                                extreme_entry = True
+                                break
+
+            if normal_entry or extreme_entry:
+                # EMA filter (optional)
+                if self.params.use_ema_filter:
+                    ema_col = 'ema200' if 'ema200' in df.columns else 'ema'
+                    if ema_col in df.columns:
+                        ema_val = df.iloc[bar_idx][ema_col]
+                        if not np.isnan(ema_val) and df.iloc[bar_idx]['close'] < ema_val:
+                            return None
+
+                return "long"
+
+            return None
+
+        # --- Two-EMA crossover entry (original pattern) ---
         long_ok = True
         short_ok = self.params.enable_shorts
 
-        # --- Two-EMA crossover trend filter ---
         if self.params.use_ema_crossover:
             if 'ema_fast' not in df.columns or 'ema_slow' not in df.columns:
                 return None
@@ -471,21 +646,17 @@ class BacktestEngine:
             ema_s = df.iloc[bar_idx]['ema_slow']
             if np.isnan(ema_f) or np.isnan(ema_s):
                 return None
-
-            # Long requires uptrend (emaFast > emaSlow)
             if ema_f <= ema_s:
                 long_ok = False
-
-            # Short requires downtrend (emaFast < emaSlow)
             if ema_f >= ema_s:
                 short_ok = False
 
         # --- Single EMA filter ---
         if self.params.use_ema_filter:
-            if 'ema' not in df.columns or np.isnan(df.iloc[bar_idx]['ema']):
-                return None
-            if df.iloc[bar_idx]['close'] < df.iloc[bar_idx]['ema']:
-                long_ok = False
+            ema_col = 'ema200' if 'ema200' in df.columns else 'ema'
+            if ema_col in df.columns and not np.isnan(df.iloc[bar_idx][ema_col]):
+                if df.iloc[bar_idx]['close'] < df.iloc[bar_idx][ema_col]:
+                    long_ok = False
 
         # --- ADX filter ---
         if self.params.use_adx_filter:
@@ -501,16 +672,12 @@ class BacktestEngine:
                 return None
             rsi_val = df.iloc[bar_idx]['rsi']
 
-            # Use rsi_min/rsi_max if set (from parsed rsiMin/rsiMax)
             if self.params.rsi_min > 0 or self.params.rsi_max < 100:
-                # Long: rsi > rsiMin AND rsi < rsiMax
                 if rsi_val <= self.params.rsi_min or rsi_val >= self.params.rsi_max:
                     long_ok = False
-                # Short: rsi < (100 - rsiMin)
                 if rsi_val >= (100 - self.params.rsi_min):
                     short_ok = False
             else:
-                # Fallback to overbought/oversold
                 if rsi_val > self.params.rsi_overbought or rsi_val < self.params.rsi_oversold:
                     long_ok = False
 
@@ -538,10 +705,8 @@ class BacktestEngine:
 
         # Calculate position size based on qty_type
         if self.config.qty_type == "percent_of_equity":
-            # TradingView: qty = floor(equity * pct / 100 / price)
             available_capital = self.equity * (self.config.order_size_pct / 100.0)
         else:
-            # Default: percent of cash
             available_capital = self.cash * (self.config.order_size_pct / 100.0)
 
         qty = int(available_capital / price)
@@ -564,6 +729,7 @@ class BacktestEngine:
             commission=commission,
             max_high=price,
             min_low=price,
+            highest_since_entry=price,
         )
 
         # Set initial stop/TP levels
@@ -576,7 +742,6 @@ class BacktestEngine:
                 else:
                     trade.stop_loss_price = price + (atr_val * self.params.sl_atr_mult)
 
-            # ATR-based profit target
             if self.params.tp_atr_mult > 0 and atr_val > 0:
                 if direction == "long":
                     trade.profit_target_price = price + (atr_val * self.params.tp_atr_mult)
@@ -590,14 +755,15 @@ class BacktestEngine:
                 trade.stop_loss_price = price * (1 + self.params.stop_loss_pct / 100.0)
 
         if self.params.use_profit_target and self.params.profit_target_pct > 0 and self.params.tp_atr_mult <= 0:
-            # Percentage-based profit target
-            if direction == "long":
-                trade.profit_target_price = price * (1 + self.params.profit_target_pct / 100.0)
-            else:
-                trade.profit_target_price = price * (1 - self.params.profit_target_pct / 100.0)
+            # For oscillator strategies with trailing, profit_target_pct is trail ACTIVATION threshold
+            # Don't set a hard profit target price if we have trailing
+            if not (self.params.use_trailing_stop and self.params.trailing_pct > 0):
+                if direction == "long":
+                    trade.profit_target_price = price * (1 + self.params.profit_target_pct / 100.0)
+                else:
+                    trade.profit_target_price = price * (1 - self.params.profit_target_pct / 100.0)
 
         # Exit orders are NOT active on entry bar
-        # They become active after strategy.exit() runs at bar close
         trade.exit_orders_active = False
 
         # Update state
@@ -640,60 +806,42 @@ class BacktestEngine:
         self.current_trade = None
 
     def _check_stop_loss(self, bar_open: float, bar_low: float, bar_high: float, trade: Trade) -> bool:
-        """Check if stop loss was hit."""
+        """Check if stop loss was hit (intrabar)."""
         if not trade.stop_loss_price:
             return False
         if trade.direction == "long":
-            if bar_open <= trade.stop_loss_price:
-                return True
-            if bar_low <= trade.stop_loss_price:
-                return True
+            return bar_open <= trade.stop_loss_price or bar_low <= trade.stop_loss_price
         else:
-            if bar_open >= trade.stop_loss_price:
-                return True
-            if bar_high >= trade.stop_loss_price:
-                return True
-        return False
+            return bar_open >= trade.stop_loss_price or bar_high >= trade.stop_loss_price
 
     def _check_trailing_stop(self, bar_open: float, bar_low: float, bar_high: float, trade: Trade) -> bool:
-        """Check if trailing stop was hit."""
+        """Check if trailing stop was hit (intrabar)."""
         if not trade.trail_stop:
             return False
         if trade.direction == "long":
-            if bar_open <= trade.trail_stop:
-                return True
-            if bar_low <= trade.trail_stop:
-                return True
+            return bar_open <= trade.trail_stop or bar_low <= trade.trail_stop
         else:
-            if bar_open >= trade.trail_stop:
-                return True
-            if bar_high >= trade.trail_stop:
-                return True
-        return False
+            return bar_open >= trade.trail_stop or bar_high >= trade.trail_stop
 
     def _check_profit_target(self, bar_open: float, bar_high: float, bar_low: float, trade: Trade) -> bool:
-        """Check if profit target was hit."""
+        """Check if profit target was hit (intrabar)."""
         if not trade.profit_target_price:
             return False
         if trade.direction == "long":
-            if bar_open >= trade.profit_target_price:
-                return True
-            if bar_high >= trade.profit_target_price:
-                return True
+            return bar_open >= trade.profit_target_price or bar_high >= trade.profit_target_price
         else:
-            if bar_open <= trade.profit_target_price:
-                return True
-            if bar_low <= trade.profit_target_price:
-                return True
-        return False
+            return bar_open <= trade.profit_target_price or bar_low <= trade.profit_target_price
 
     def _update_trailing_stop(self, bar_high: float, bar_low: float, trade: Trade):
-        """Update trailing stop based on price movement."""
+        """Update trailing stop based on intrabar prices (for strategy.exit)."""
         if not self.params.use_trailing_stop or self.params.trailing_pct <= 0:
             return
 
+        # Determine activation threshold
+        activation_pct = self.params.trail_activation_pct if self.params.trail_activation_pct > 0 else self.params.profit_target_pct
+
         if trade.direction == "long":
-            activation_price = trade.entry_price * (1 + self.params.trailing_pct / 100.0)
+            activation_price = trade.entry_price * (1 + activation_pct / 100.0)
             if bar_high >= activation_price:
                 trade.trailing_active = True
             if trade.trailing_active:
@@ -701,7 +849,7 @@ class BacktestEngine:
                 if trade.trail_stop is None or new_trail > trade.trail_stop:
                     trade.trail_stop = new_trail
         else:
-            activation_price = trade.entry_price * (1 - self.params.trailing_pct / 100.0)
+            activation_price = trade.entry_price * (1 - activation_pct / 100.0)
             if bar_low <= activation_price:
                 trade.trailing_active = True
             if trade.trailing_active:
@@ -709,29 +857,49 @@ class BacktestEngine:
                 if trade.trail_stop is None or new_trail < trade.trail_stop:
                     trade.trail_stop = new_trail
 
+    def _update_trailing_stop_close(self, bar_close: float, trade: Trade):
+        """
+        Update trailing stop based on bar close prices (for strategy.close patterns).
+
+        The Saty Phase strategy checks at bar close:
+        - Activate trailing when profit >= profit_target_pct
+        - Trail at trailing_pct below highest close since entry
+        """
+        if not self.params.use_trailing_stop or self.params.trailing_pct <= 0:
+            return
+
+        # Determine activation threshold
+        activation_pct = self.params.trail_activation_pct if self.params.trail_activation_pct > 0 else self.params.profit_target_pct
+
+        if trade.direction == "long":
+            # Current profit percentage
+            current_profit_pct = ((bar_close - trade.entry_price) / trade.entry_price) * 100
+
+            # Activate trailing when profit exceeds threshold
+            if current_profit_pct >= activation_pct:
+                trade.trailing_active = True
+
+            if trade.trailing_active:
+                # Trail below highest close since entry
+                new_trail = trade.highest_since_entry * (1 - self.params.trailing_pct / 100.0)
+                if trade.trail_stop is None or new_trail > trade.trail_stop:
+                    trade.trail_stop = new_trail
+
     def _get_stop_fill_price(self, bar_open: float, bar_low: float, bar_high: float,
                               stop_price: float, direction: str) -> float:
         """Get fill price for stop order (handles gaps)."""
         if direction == "long":
-            if bar_open <= stop_price:
-                return bar_open
-            return stop_price
+            return bar_open if bar_open <= stop_price else stop_price
         else:
-            if bar_open >= stop_price:
-                return bar_open
-            return stop_price
+            return bar_open if bar_open >= stop_price else stop_price
 
     def _get_target_fill_price(self, bar_open: float, bar_high: float, bar_low: float,
                                 target_price: float, direction: str) -> float:
         """Get fill price for profit target (handles gaps)."""
         if direction == "long":
-            if bar_open >= target_price:
-                return bar_open
-            return target_price
+            return bar_open if bar_open >= target_price else target_price
         else:
-            if bar_open <= target_price:
-                return bar_open
-            return target_price
+            return bar_open if bar_open <= target_price else target_price
 
     def _record_equity(self, current_price: float):
         """Record equity and drawdown at current bar."""
@@ -807,7 +975,7 @@ class BacktestEngine:
         return result
 
 
-def run_backtest(df: pd.DataFrame, params: StrategyParams = None,
+def run_backtest(df: pd.DataFrame, params=None,
                  config: BacktestConfig = None,
                  entry_func: Callable = None,
                  exit_func: Callable = None) -> BacktestResult:
