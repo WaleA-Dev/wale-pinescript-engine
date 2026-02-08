@@ -725,12 +725,22 @@ class MainWindow(QMainWindow):
                     f"Databento XNAS/XNYS data starts from May 2018.\n"
                     f"Please set a start date of 2018-05-01 or later."
                 )
-            elif 'not_found' in error_msg.lower():
+            elif 'not found' in error_msg.lower() or 'not_found' in error_msg.lower():
                 error_msg = (
-                    f"Symbol '{symbol}' not found on selected exchange.\n\n"
-                    f"Try switching exchange:\n"
-                    f"- NASDAQ: tech stocks (AAPL, MSFT, NDAQ)\n"
-                    f"- NYSE/AMEX: ETFs and blue chips (SCHD, SPY, JPM)"
+                    f"Symbol '{symbol}' not found on any exchange.\n\n"
+                    f"Make sure the ticker is correct and available on Databento.\n"
+                    f"Try: AAPL, MSFT, NDAQ (NASDAQ) or SCHD, SPY, JPM (NYSE/AMEX)"
+                )
+            elif 'data_end_after_available_end' in error_msg:
+                error_msg = (
+                    f"End date is beyond Databento's available data.\n\n"
+                    f"This usually means data for today isn't available yet.\n"
+                    f"Try setting an earlier end date."
+                )
+            elif 'auth' in error_msg.lower() or '401' in error_msg:
+                error_msg = (
+                    f"API key authentication failed.\n\n"
+                    f"Please check your Databento API key is valid and has remaining credits."
                 )
             QMessageBox.critical(self, "Error", f"Failed to fetch data: {error_msg}")
             self.statusbar.showMessage("Data fetch failed")

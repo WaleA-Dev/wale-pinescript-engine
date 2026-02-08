@@ -162,27 +162,16 @@ class DatabentoProvider:
         except ImportError:
             raise ImportError("databento package not installed. Run: pip install databento")
 
+        is_auto = dataset.upper() == 'AUTO'
+
         # Auto-detect exchange if needed
-        if dataset.upper() == 'AUTO':
+        if is_auto:
             dataset = self.detect_exchange(symbol)
 
-        # Get dataset identifier
-        ds = self.DATASETS.get(dataset.upper(), self.DATASETS['NASDAQ'])
-
-        # Clamp start date to dataset availability
-        min_date = self.DATASET_START_DATES.get(ds, datetime(2018, 5, 1))
-        if start_date < min_date:
-            print(f"Note: {ds} data starts {min_date.strftime('%Y-%m-%d')}. Clamping start date.")
-            start_date = min_date
-
-        # Clamp end date to today (Databento data is typically 1 day behind)
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        if end_date > today:
-            end_date = today
-
-        # Ensure end_date is after start_date
-        if end_date <= start_date:
-            end_date = start_date + timedelta(days=30)
+        # Clamp end date to yesterday (Databento data is typically 1+ day behind)
+        yesterday = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        if end_date > yesterday:
+            end_date = yesterday
 
         # Get timeframe in seconds
         tf_seconds = self.TIMEFRAME_MAP.get(timeframe, 3600)
@@ -197,7 +186,75 @@ class DatabentoProvider:
         else:
             schema = 'ohlcv-1d'
 
-        # Fetch data
+        # Build list of datasets to try
+        # If AUTO, try detected exchange first, then fallback to the other
+        if is_auto:
+            primary_ds = self.DATASETS.get(dataset.upper(), self.DATASETS['NASDAQ'])
+            # Fallback: if primary is NASDAQ, try NYSE; if NYSE, try NASDAQ
+            if primary_ds == 'XNAS.ITCH':
+                datasets_to_try = ['XNAS.ITCH', 'XNYS.PILLAR']
+            else:
+                datasets_to_try = ['XNYS.PILLAR', 'XNAS.ITCH']
+        else:
+            datasets_to_try = [self.DATASETS.get(dataset.upper(), self.DATASETS['NASDAQ'])]
+
+        last_error = None
+        for ds in datasets_to_try:
+            try:
+                df = self._fetch_from_dataset(
+                    db, symbol, start_date, end_date, ds, schema, rth_only
+                )
+                return df
+            except Exception as e:
+                error_str = str(e).lower()
+                # If symbol not found on this exchange, try the next one
+                if 'not_found' in error_str or 'not found' in error_str:
+                    last_error = e
+                    continue
+                # Date range errors - try to fix
+                if 'data_end_after_available_end' in error_str:
+                    # Try with an even earlier end date
+                    end_date = end_date - timedelta(days=1)
+                    try:
+                        df = self._fetch_from_dataset(
+                            db, symbol, start_date, end_date, ds, schema, rth_only
+                        )
+                        return df
+                    except Exception as e2:
+                        last_error = e2
+                        continue
+                if 'data_start_before_available_start' in error_str:
+                    last_error = e
+                    continue
+                # Any other error, raise immediately
+                raise
+
+        # All datasets failed
+        if last_error:
+            error_msg = str(last_error)
+            if 'not_found' in error_msg.lower() or 'not found' in error_msg.lower():
+                raise ValueError(
+                    f"Symbol '{symbol}' not found on any exchange. "
+                    f"Make sure the ticker is correct and available on Databento."
+                )
+            raise last_error
+
+        return pd.DataFrame(columns=['time', 'open', 'high', 'low', 'close', 'volume'])
+
+    def _fetch_from_dataset(
+        self, db, symbol: str, start_date: datetime, end_date: datetime,
+        ds: str, schema: str, rth_only: bool,
+    ) -> pd.DataFrame:
+        """Fetch data from a specific Databento dataset."""
+        # Clamp start date to dataset availability
+        min_date = self.DATASET_START_DATES.get(ds, datetime(2018, 5, 1))
+        if start_date < min_date:
+            start_date = min_date
+
+        # Ensure end_date is after start_date
+        if end_date <= start_date:
+            end_date = start_date + timedelta(days=30)
+
         client = db.Historical(self.api_key)
 
         data = client.timeseries.get_range(
