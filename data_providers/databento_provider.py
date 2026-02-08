@@ -175,6 +175,11 @@ class DatabentoProvider:
             print(f"Note: {ds} data starts {min_date.strftime('%Y-%m-%d')}. Clamping start date.")
             start_date = min_date
 
+        # Clamp end date to today (Databento data is typically 1 day behind)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        if end_date > today:
+            end_date = today
+
         # Ensure end_date is after start_date
         if end_date <= start_date:
             end_date = start_date + timedelta(days=30)
