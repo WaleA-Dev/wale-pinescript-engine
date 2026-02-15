@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wale Backtest</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg-0: #09090b;
+    --bg-1: #0f0f12;
+    --bg-2: #18181b;
+    --bg-3: #1e1e23;
+    --bg-4: #27272a;
+    --border: #27272a;
+    --border-subtle: #1e1e23;
+    --text-0: #fafafa;
+    --text-1: #a1a1aa;
+    --text-2: #71717a;
+    --text-3: #52525b;
+    --blue: #3b82f6;
+    --blue-dim: rgba(59,130,246,0.12);
+    --green: #22c55e;
+    --green-dim: rgba(34,197,94,0.12);
+    --red: #ef4444;
+    --red-dim: rgba(239,68,68,0.12);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+    --purple: #a78bfa;
+    --sans: 'Inter', -apple-system, system-ui, sans-serif;
+    --mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  body { background: var(--bg-0); color: var(--text-0); font-family: var(--sans); overflow: hidden; height: 100vh; }
+
+  /* ── TITLEBAR ───────────────────────────────────────────── */
+  .titlebar {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 48px; padding: 0 20px;
+    background: var(--bg-0); border-bottom: 1px solid var(--border);
+  }
+  .tb-left { display: flex; align-items: center; gap: 10px; }
+  .tb-logo {
+    width: 26px; height: 26px; border-radius: 6px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: grid; place-items: center;
+    font: 800 13px/1 var(--sans); color: #fff;
+  }
+  .tb-name { font-weight: 700; font-size: 14px; letter-spacing: -0.3px; }
+  .tb-sub { font-size: 11px; color: var(--text-2); margin-left: 2px; }
+  .tb-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 12px; border-radius: 100px;
+    font-size: 11px; font-weight: 600;
+    background: var(--bg-3); color: var(--text-2); border: 1px solid var(--border);
+    transition: all .25s;
+  }
+  .tb-badge.live { background: var(--green-dim); color: var(--green); border-color: rgba(34,197,94,.2); }
+  .tb-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: currentColor; transition: background .25s;
+  }
+  .tb-badge.live .tb-dot { animation: blink 2s ease-in-out infinite; }
+  @keyframes blink { 50%{opacity:.3} }
+
+  /* ── LAYOUT ─────────────────────────────────────────────── */
+  .shell { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 48px - 28px); }
+
+  /* ── LEFT SIDEBAR ───────────────────────────────────────── */
+  .sidebar {
+    background: var(--bg-0); border-right: 1px solid var(--border);
+    padding: 12px; overflow-y: auto; overflow-x: hidden;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .sidebar::-webkit-scrollbar { width: 4px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
+
+  /* ── CARD ────────────────────────────────────────────────── */
+  .card {
+    background: var(--bg-1); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg); padding: 14px;
+  }
+  .card-hd {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.2px; color: var(--text-3); margin-bottom: 12px;
+  }
+
+  /* ── FORM ────────────────────────────────────────────────── */
+  .row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+  .row label { font-size: 11px; color: var(--text-1); min-width: 48px; font-weight: 500; flex-shrink: 0; }
+  .field {
+    width: 100%; min-width: 0;
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px;
+    color: var(--text-0); font-family: var(--mono); font-size: 11px;
+    outline: none; transition: border-color .15s;
+  }
+  .field:focus { border-color: var(--blue); }
+  select.field {
+    appearance: none; -webkit-appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2371717a'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center; padding-right: 22px;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .mini { display: flex; flex-direction: column; gap: 2px; }
+  .mini label { font-size: 9px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; min-width: 0; }
+
+  .btns { display: flex; gap: 6px; margin-top: 6px; }
+  .btn {
+    flex: 1; padding: 6px 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg-2);
+    color: var(--text-0); font: 600 11px/1.2 var(--sans);
+    cursor: pointer; transition: all .12s; text-align: center; white-space: nowrap;
+  }
+  .btn:hover { background: var(--bg-3); border-color: var(--text-3); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-green { background: #166534; border-color: #15803d; color: #fff; }
+  .btn-green:hover { background: #15803d; }
+
+  .info {
+    font-size: 10px; color: var(--text-2); margin-top: 6px;
+    min-height: 14px; word-break: break-word;
+  }
+  .info.ok { color: var(--green); }
+  .info.err { color: var(--red); }
+
+  /* ── CODE EDITOR ─────────────────────────────────────────── */
+  .editor {
+    width: 100%; min-height: 100px; resize: vertical;
+    background: var(--bg-0); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px;
+    font: 400 11px/1.6 var(--mono); color: var(--text-1);
+    outline: none; transition: border-color .15s;
+  }
+  .editor:focus { border-color: var(--blue); color: var(--text-0); }
+
+  /* ── RIGHT PANEL ─────────────────────────────────────────── */
+  .main { display: flex; flex-direction: column; overflow: hidden; background: var(--bg-0); }
+
+  /* ── TABS ─────────────────────────────────────────────────── */
+  .tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+    padding: 0 16px; background: var(--bg-0);
+  }
+  .tab {
+    padding: 11px 20px; font-size: 12px; font-weight: 600;
+    color: var(--text-3); cursor: pointer;
+    border-bottom: 2px solid transparent; transition: all .15s;
+    user-select: none;
+  }
+  .tab:hover { color: var(--text-1); }
+  .tab.on { color: var(--text-0); border-bottom-color: var(--blue); }
+
+  .pane { flex: 1; overflow-y: auto; padding: 16px; display: none; }
+  .pane.on { display: block; }
+  .pane::-webkit-scrollbar { width: 4px; }
+  .pane::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
+
+  /* ── METRICS GRID ────────────────────────────────────────── */
+  .mgrid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 16px; }
+  .mcard {
+    background: var(--bg-1); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius); padding: 14px;
+    animation: rise .35s ease-out both;
+  }
+  .mcard:nth-child(1){animation-delay:.04s} .mcard:nth-child(2){animation-delay:.08s}
+  .mcard:nth-child(3){animation-delay:.12s} .mcard:nth-child(4){animation-delay:.16s}
+  .mcard:nth-child(5){animation-delay:.2s} .mcard:nth-child(6){animation-delay:.24s}
+  @keyframes rise { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+  .mcard .ml { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-3); margin-bottom: 6px; }
+  .mcard .mv { font: 700 22px/1 var(--mono); letter-spacing: -.5px; }
+  .mcard .mv.pos { color: var(--green); }
+  .mcard .mv.neg { color: var(--red); }
+  .mcard .ms { font-size: 10px; color: var(--text-3); margin-top: 4px; }
+
+  /* ── TABLE ────────────────────────────────────────────────── */
+  .tbl-wrap {
+    background: var(--bg-1); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg); padding: 14px; margin-bottom: 16px;
+  }
+  .tbl-hd { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-3); margin-bottom: 10px; }
+  table.tbl { width: 100%; border-collapse: collapse; }
+  .tbl tr { border-bottom: 1px solid var(--border-subtle); }
+  .tbl tr:last-child { border-bottom: none; }
+  .tbl td { padding: 8px 0; font-size: 12px; }
+  .tbl td:first-child { color: var(--text-1); font-weight: 500; }
+  .tbl td:last-child { text-align: right; font: 600 12px var(--mono); }
+  .tbl th { padding: 6px 0; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--text-3); text-align: left; border-bottom: 1px solid var(--border); }
+  .tbl th:nth-child(n+2) { text-align: right; }
+
+  /* ── CHART ────────────────────────────────────────────────── */
+  .chart-box {
+    background: var(--bg-1); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg); padding: 14px; margin-bottom: 10px;
+  }
+  .chart-box canvas { width: 100%; height: 260px; display: block; cursor: crosshair; }
+
+  /* ── VALIDATION ──────────────────────────────────────────── */
+  .vstep {
+    background: var(--bg-1); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius); padding: 14px 16px; margin-bottom: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .vstep-l { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+  .vstep-name { font-size: 12px; font-weight: 600; }
+  .vstep-det { font-size: 10px; color: var(--text-1); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge {
+    flex-shrink: 0; padding: 3px 12px; border-radius: 100px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+    white-space: nowrap;
+  }
+  .badge-wait { background: var(--bg-3); color: var(--text-3); }
+  .badge-run { background: var(--blue-dim); color: var(--blue); }
+  .badge-pass { background: var(--green-dim); color: var(--green); }
+  .badge-fail { background: var(--red-dim); color: var(--red); }
+
+  .vbox {
+    background: var(--bg-1); border: 2px solid var(--border);
+    border-radius: var(--radius-lg); padding: 20px; text-align: center; margin-top: 12px;
+  }
+  .vbox .vl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-3); margin-bottom: 6px; }
+  .vbox .vt { font: 800 26px/1 var(--sans); letter-spacing: -.5px; }
+  .vbox .vs { font-size: 12px; color: var(--text-1); margin-top: 6px; }
+  .vbox.v-ok { border-color: var(--green); }
+  .vbox.v-ok .vt { color: var(--green); }
+  .vbox.v-bad { border-color: var(--red); }
+  .vbox.v-bad .vt { color: var(--red); }
+  .vbox.v-meh { border-color: var(--amber); }
+  .vbox.v-meh .vt { color: var(--amber); }
+
+  /* ── ACTION BAR ──────────────────────────────────────────── */
+  .actions {
+    padding: 12px 16px; border-top: 1px solid var(--border);
+    display: flex; gap: 8px; background: var(--bg-0);
+  }
+  .act {
+    flex: 1; padding: 10px 16px; border-radius: var(--radius); border: none;
+    font: 700 13px/1 var(--sans); cursor: pointer; transition: all .15s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .act:disabled { opacity: .35; cursor: not-allowed; }
+  .act-1 { background: linear-gradient(135deg,#166534,#15803d); color: #fff; box-shadow: 0 2px 10px rgba(22,101,52,.3); }
+  .act-1:hover:not(:disabled) { background: linear-gradient(135deg,#15803d,#22c55e); transform: translateY(-1px); }
+  .act-2 { background: linear-gradient(135deg,#1d4ed8,#3b82f6); color: #fff; box-shadow: 0 2px 10px rgba(59,130,246,.25); }
+  .act-2:hover:not(:disabled) { background: linear-gradient(135deg,#3b82f6,#60a5fa); transform: translateY(-1px); }
+  .act-3 { background: transparent; border: 1px solid var(--border); color: var(--text-1); }
+  .act-3:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
+
+  /* ── STATUS BAR ──────────────────────────────────────────── */
+  .sbar {
+    height: 28px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; background: var(--bg-1); border-top: 1px solid var(--border);
+    font-size: 10px; color: var(--text-3);
+  }
+  .sbar-r { font-family: var(--mono); }
+
+  /* ── EMPTY STATE ─────────────────────────────────────────── */
+  .empty { text-align: center; padding: 50px 16px; }
+  .empty .ei { font-size: 36px; opacity: .15; margin-bottom: 12px; }
+  .empty h3 { font-size: 14px; color: var(--text-2); margin-bottom: 4px; }
+  .empty p { font-size: 12px; color: var(--text-3); }
+
+  /* ── SPINNER ─────────────────────────────────────────────── */
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--bg-4);
+    border-top-color: var(--blue); border-radius: 50%; animation: sp .5s linear infinite; vertical-align: middle; margin-right: 4px; }
+  @keyframes sp { to{transform:rotate(360deg)} }
+
+  .hide { display: none !important; }
+  input[type=file].hide { position: absolute; width: 0; height: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+
+<!-- TITLEBAR -->
+<div class="titlebar">
+  <div class="tb-left">
+    <div class="tb-logo">W</div>
+    <span class="tb-name">Wale Backtest</span>
+    <span class="tb-sub">strategy validation engine</span>
+  </div>
+  <div class="tb-badge" id="badge"><span class="tb-dot"></span><span id="badgeTxt">Ready</span></div>
+</div>
+
+<div class="shell">
+<!-- SIDEBAR -->
+<div class="sidebar">
+
+  <!-- DATA SOURCE -->
+  <div class="card">
+    <div class="card-hd">Data Source</div>
+    <div class="row">
+      <label>Source</label>
+      <select class="field" id="srcSelect" onchange="onSourceChange()">
+        <option value="yahoo">Yahoo Finance</option>
+        <option value="dukascopy">Dukascopy</option>
+        <option value="csv">CSV Upload</option>
+      </select>
+    </div>
+
+    <!-- Yahoo fields -->
+    <div id="yahooFields">
+      <div class="row">
+        <label>Symbol</label>
+        <input class="field" id="symInput" placeholder="e.g. QQQ, SPY, AAPL, BTC-USD">
+      </div>
+      <div id="symInfo" class="info hide"></div>
+      <div class="row2">
+        <div class="mini"><label>Interval</label>
+          <select class="field" id="intSelect">
+            <option value="1h">1H</option><option value="1d" selected>1D</option><option value="1wk">1W</option>
+          </select>
+        </div>
+        <div class="mini"><label>Start</label>
+          <input class="field" id="startInput" placeholder="auto (max)">
+        </div>
+      </div>
+      <div class="btns">
+        <button class="btn" onclick="lookupTicker()">Lookup</button>
+        <button class="btn btn-green" onclick="fetchYahoo()">Fetch</button>
+      </div>
+    </div>
+
+    <!-- Dukascopy fields -->
+    <div id="dukaFields" class="hide">
+      <div class="row">
+        <label>Pair</label>
+        <input class="field" id="dukaSym" placeholder="e.g. EUR-USD, GBP-USD">
+      </div>
+      <div class="row3">
+        <div class="mini"><label>Start</label>
+          <input class="field" id="dukaStart" placeholder="dd-mm-yyyy">
+        </div>
+        <div class="mini"><label>End</label>
+          <input class="field" id="dukaEnd" placeholder="dd-mm-yyyy">
+        </div>
+        <div class="mini"><label>Resample</label>
+          <select class="field" id="dukaRes">
+            <option value="1min">1min</option><option value="5min">5min</option>
+            <option value="15min">15min</option><option value="1h" selected>1H</option>
+            <option value="4h">4H</option><option value="1d">1D</option>
+          </select>
+        </div>
+      </div>
+      <div class="btns">
+        <button class="btn btn-green" onclick="fetchDuka()">Fetch Dukascopy</button>
+      </div>
+    </div>
+
+    <!-- CSV upload -->
+    <div id="csvFields" class="hide">
+      <div class="btns">
+        <button class="btn btn-green" onclick="document.getElementById('csvFile').click()">Choose CSV File</button>
+      </div>
+      <input type="file" id="csvFile" class="hide" accept=".csv,.tsv,.txt" onchange="uploadCSV(this)">
+    </div>
+
+    <div class="info" id="dataInfo"></div>
+  </div>
+
+  <!-- STRATEGY -->
+  <div class="card">
+    <div class="card-hd">Strategy</div>
+    <div class="row">
+      <label>Select</label>
+      <select class="field" id="stratSel" onchange="currentStrat=this.value"></select>
+    </div>
+    <div class="btns" style="margin-bottom:8px">
+      <button class="btn" id="btnPineTab" onclick="showEditorTab('pine')" style="opacity:.6">Pine Editor</button>
+      <button class="btn" id="btnPyTab" onclick="showEditorTab('python')" style="opacity:.6">Python Editor</button>
+      <button class="btn" onclick="translatePine()">Translate</button>
+    </div>
+    <div id="pineWrap" class="hide">
+      <textarea class="editor" id="pineCode" spellcheck="false" placeholder="Paste PineScript here..."></textarea>
+      <div class="info" id="pineInfo"></div>
+    </div>
+    <div id="pyWrap" class="hide">
+      <div class="row">
+        <label>Name</label>
+        <input class="field" id="pyName" placeholder="my_strategy" value="custom_strategy">
+      </div>
+      <textarea class="editor" id="pyCode" spellcheck="false" style="min-height:160px">import numpy as np
+import pandas as pd
+from src.strategies.base import BaseStrategy
+
+
+class CustomStrategy(BaseStrategy):
+    """Custom Python strategy."""
+
+    def __init__(self, **params):
+        super().__init__(**params)
+        self.params.setdefault('fast', 10)
+        self.params.setdefault('slow', 30)
+
+    def generate_signals(self, df):
+        fast = df['close'].rolling(self.params['fast']).mean()
+        slow = df['close'].rolling(self.params['slow']).mean()
+        signal = pd.Series(0, index=df.index)
+        signal[fast > slow] = 1
+        signal[fast < slow] = -1
+        return signal
+
+    def param_grid(self):
+        return {'fast': [5, 10, 20], 'slow': [20, 30, 50]}
+</textarea>
+      <div class="btns" style="margin-top:6px">
+        <button class="btn btn-green" onclick="savePyStrategy()">Save &amp; Register</button>
+      </div>
+      <div class="info" id="pyInfo"></div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="card">
+    <div class="card-hd">Settings</div>
+    <div class="row2">
+      <div class="mini"><label>Commission</label><input class="field" id="commInput" value="0.001"></div>
+      <div class="mini"><label>Train Yrs</label><input class="field" id="trainInput" value="4"></div>
+    </div>
+    <div class="row2">
+      <div class="mini"><label>IS Perms</label><input class="field" id="isPerms" value="200"></div>
+      <div class="mini"><label>WF Perms</label><input class="field" id="wfPerms" value="100"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN PANEL -->
+<div class="main">
+  <div class="tabs">
+    <div class="tab on" onclick="tab('summary')">Summary</div>
+    <div class="tab" onclick="tab('trades')">Trades</div>
+    <div class="tab" onclick="tab('charts')">Charts</div>
+    <div class="tab" onclick="tab('validation')">Validation</div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="pane on" id="p-summary">
+    <div id="sumEmpty" class="empty"><div class="ei">&#8942;</div><h3>No results yet</h3><p>Load data and run a backtest</p></div>
+    <div id="sumContent" class="hide">
+      <div class="mgrid" id="mgrid"></div>
+      <div class="tbl-wrap">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="tbl-hd" style="margin-bottom:0">Detailed Metrics</div>
+          <button class="btn" onclick="downloadSummary()" style="flex:none;padding:4px 10px">Export CSV</button>
+        </div>
+        <table class="tbl" id="dtbl"><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRADES -->
+  <div class="pane" id="p-trades">
+    <div id="trEmpty" class="empty"><div class="ei">&#8942;</div><h3>No trades yet</h3><p>Run a backtest first</p></div>
+    <div id="trContent" class="hide">
+      <div class="tbl-wrap">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div class="tbl-hd" style="margin-bottom:0">Trade List (<span id="trCnt">0</span> trades)</div>
+          <button class="btn" onclick="downloadTrades()" style="flex:none;padding:4px 10px">Export CSV</button>
+        </div>
+        <table class="tbl" id="trTbl"><thead><tr><th>#</th><th>Dir</th><th>Entry Date</th><th>Entry $</th><th>Exit Date</th><th>Exit $</th><th>Bars</th><th>P&L</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHARTS -->
+  <div class="pane" id="p-charts">
+    <div id="chEmpty" class="empty"><div class="ei">&#8942;</div><h3>No charts yet</h3><p>Run a backtest first</p></div>
+    <div id="chContent" class="hide">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn" onclick="downloadChartData()" style="flex:none;padding:4px 10px">Export Chart CSV</button>
+      </div>
+      <div class="chart-box"><div class="tbl-hd" id="eqTitle">Equity Curve</div><canvas id="eqCanvas" height="260"></canvas></div>
+      <div class="chart-box"><div class="tbl-hd" id="ddTitle">Drawdown</div><canvas id="ddCanvas" height="260"></canvas></div>
+    </div>
+  </div>
+
+  <!-- VALIDATION -->
+  <div class="pane" id="p-validation">
+    <div id="valEmpty" class="empty"><div class="ei">&#8942;</div><h3>No validation yet</h3><p>Click "4-Step Validation" to begin</p></div>
+    <div id="valContent" class="hide">
+      <div class="vstep"><div class="vstep-l"><div class="vstep-name">Step 1: In-Sample Optimization</div><div class="vstep-det" id="vd1">Waiting</div></div><div class="badge badge-wait" id="vb1">Pending</div></div>
+      <div class="vstep"><div class="vstep-l"><div class="vstep-name">Step 2: IS Permutation Test</div><div class="vstep-det" id="vd2">Waiting</div></div><div class="badge badge-wait" id="vb2">Pending</div></div>
+      <div class="vstep"><div class="vstep-l"><div class="vstep-name">Step 3: Walk-Forward OOS</div><div class="vstep-det" id="vd3">Waiting</div></div><div class="badge badge-wait" id="vb3">Pending</div></div>
+      <div class="vstep"><div class="vstep-l"><div class="vstep-name">Step 4: WF Permutation Test</div><div class="vstep-det" id="vd4">Waiting</div></div><div class="badge badge-wait" id="vb4">Pending</div></div>
+      <div class="vbox hide" id="vbox"><div class="vl">Final Verdict</div><div class="vt" id="vtext"></div><div class="vs" id="vsub"></div></div>
+      <div style="margin-top:10px;display:flex;justify-content:flex-end">
+        <button class="btn" id="btnDlVal" onclick="downloadValidation()" style="flex:none;padding:4px 10px;display:none">Export Validation JSON</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIONS -->
+  <div class="actions">
+    <button class="act act-1" id="btnBt" onclick="runBt()">Run Backtest</button>
+    <button class="act act-2" id="btnVal" onclick="runVal()">4-Step Validation</button>
+    <button class="act act-3" id="btnOpt" onclick="runOpt()">Optimize</button>
+  </div>
+</div>
+</div>
+
+<!-- STATUS BAR -->
+<div class="sbar">
+  <span id="sbarL">Ready</span>
+  <span class="sbar-r">Wale Backtest v1.0</span>
+</div>
+
+<script>
+let currentStrat='';
+let pollId=null;
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', async()=>{
+  await loadStrats();
+  await checkData();
+});
+
+// ── TABS ──
+function tab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  document.querySelector(`.tab:nth-child(${['summary','trades','charts','validation'].indexOf(id)+1})`).classList.add('on');
+  document.getElementById('p-'+id).classList.add('on');
+  // Redraw charts when Charts tab becomes visible
+  if(id==='charts') requestAnimationFrame(()=>_tryDrawCharts());
+}
+
+// ── STATUS ──
+function status(t,live){
+  const b=document.getElementById('badge');
+  document.getElementById('badgeTxt').textContent=t;
+  document.getElementById('sbarL').textContent=t;
+  b.classList.toggle('live',!!live);
+}
+function dinfo(t,ok){
+  const el=document.getElementById('dataInfo');
+  el.textContent=t; el.className='info '+(ok?'ok':'err');
+}
+
+// ── DATA SOURCE TOGGLE ──
+function onSourceChange(){
+  const v=document.getElementById('srcSelect').value;
+  document.getElementById('yahooFields').classList.toggle('hide',v!=='yahoo');
+  document.getElementById('dukaFields').classList.toggle('hide',v!=='dukascopy');
+  document.getElementById('csvFields').classList.toggle('hide',v!=='csv');
+}
+
+// ── LOAD STRATEGIES ──
+async function loadStrats(){
+  try{
+    const r=await(await fetch('/api/strategies')).json();
+    const sel=document.getElementById('stratSel');
+    sel.innerHTML='';
+    r.strategies.forEach(s=>{
+      const o=document.createElement('option');
+      o.value=s.name; o.textContent=s.class; sel.appendChild(o);
+    });
+    if(r.strategies.length) currentStrat=r.strategies[0].name;
+  }catch(e){}
+}
+
+// ── CHECK DATA ──
+async function checkData(){
+  try{
+    const d=await(await fetch('/api/data/status')).json();
+    if(d.loaded){
+      dinfo(d.bars+' bars | '+d.source,true);
+      document.getElementById('sbarL').textContent=d.source+' | '+d.bars+' bars';
+    }
+  }catch(e){}
+}
+
+// ── TICKER LOOKUP ──
+async function lookupTicker(){
+  const sym=document.getElementById('symInput').value.trim();
+  if(!sym){dinfo('Enter a ticker symbol first',false);return;}
+  const si=document.getElementById('symInfo');
+  si.classList.remove('hide'); si.textContent='Looking up '+sym+'...'; si.className='info';
+  status('Looking up '+sym+'...',true);
+  try{
+    const d=await(await fetch('/api/data/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})})).json();
+    if(d.valid){
+      si.textContent=d.name+' ('+d.type+') | '+d.bars+' bars | '+d.start+' to '+d.end;
+      si.className='info ok';
+      document.getElementById('startInput').value=d.start;
+      document.getElementById('startInput').placeholder=d.start+' (earliest)';
+      status(d.symbol+' found',true);
+    } else {
+      si.textContent=d.error||'Ticker not found';
+      si.className='info err';
+      status('Not found');
+    }
+  }catch(e){si.textContent='Network error';si.className='info err';status('Error');}
+}
+
+// ── YAHOO FETCH ──
+async function fetchYahoo(){
+  const sym=document.getElementById('symInput').value.trim();
+  const int=document.getElementById('intSelect').value;
+  const start=document.getElementById('startInput').value.trim();
+  if(!sym){dinfo('Enter a ticker symbol first',false);return;}
+  status('Downloading '+sym+(start?' from '+start:' (max)')+'...',true);
+  dinfo('Downloading...',false);
+  try{
+    const d=await(await fetch('/api/data/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym,interval:int,start:start})})).json();
+    if(d.error){dinfo(d.error,false);status('Error');}
+    else{dinfo(d.bars+' bars | '+d.source,true);status('Data Loaded',true);}
+  }catch(e){dinfo('Network error',false);status('Error');}
+}
+
+// ── DUKASCOPY FETCH ──
+async function fetchDuka(){
+  const sym=document.getElementById('dukaSym').value.trim();
+  const start=document.getElementById('dukaStart').value.trim();
+  const end=document.getElementById('dukaEnd').value.trim();
+  const res=document.getElementById('dukaRes').value;
+  if(!sym){dinfo('Enter a currency pair (e.g. EUR-USD)',false);return;}
+  if(!start){dinfo('Enter a start date (dd-mm-yyyy)',false);return;}
+  status('Fetching '+sym+' from Dukascopy...',true); dinfo('Downloading (may take a minute)...',false);
+  try{
+    const d=await(await fetch('/api/data/dukascopy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym,start,end,resample:res})})).json();
+    if(d.error){dinfo(d.error,false);status('Error');}
+    else{dinfo(d.bars+' bars | '+d.source,true);status('Dukascopy Loaded',true);}
+  }catch(e){dinfo('Network error',false);status('Error');}
+}
+
+// ── CSV UPLOAD ──
+async function uploadCSV(input){
+  if(!input.files.length)return;
+  status('Uploading...',true); dinfo('Uploading...',false);
+  const fd=new FormData(); fd.append('file',input.files[0]);
+  try{
+    const d=await(await fetch('/api/data/upload',{method:'POST',body:fd})).json();
+    if(d.error){dinfo(d.error,false);status('Error');}
+    else{dinfo(d.bars+' bars | '+d.source,true);status('CSV Loaded',true);}
+  }catch(e){dinfo('Network error',false);}
+  input.value='';
+}
+
+// ── EDITOR TABS ──
+function showEditorTab(which){
+  const pineWrap=document.getElementById('pineWrap');
+  const pyWrap=document.getElementById('pyWrap');
+  const btnPine=document.getElementById('btnPineTab');
+  const btnPy=document.getElementById('btnPyTab');
+  if(which==='pine'){
+    const show=pineWrap.classList.contains('hide');
+    pineWrap.classList.toggle('hide',!show);
+    pyWrap.classList.add('hide');
+    btnPine.style.opacity=show?'1':'.6';
+    btnPy.style.opacity='.6';
+  } else {
+    const show=pyWrap.classList.contains('hide');
+    pyWrap.classList.toggle('hide',!show);
+    pineWrap.classList.add('hide');
+    btnPy.style.opacity=show?'1':'.6';
+    btnPine.style.opacity='.6';
+  }
+}
+
+// ── PYTHON STRATEGY SAVE ──
+async function savePyStrategy(){
+  const code=document.getElementById('pyCode').value.trim();
+  const name=document.getElementById('pyName').value.trim()||'custom_strategy';
+  const el=document.getElementById('pyInfo');
+  if(!code){el.textContent='Write some code first';el.className='info err';return;}
+  el.textContent='Saving...'; el.className='info';
+  try{
+    const d=await(await fetch('/api/save-strategy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,name})})).json();
+    if(d.success){el.textContent='Saved & registered: '+d.name;el.className='info ok';await loadStrats();
+      // Auto-select the new strategy
+      const sel=document.getElementById('stratSel');
+      for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===d.name){sel.selectedIndex=i;currentStrat=d.name;break;}}
+    } else {el.textContent=d.error||'Failed';el.className='info err';}
+  }catch(e){el.textContent='Network error';el.className='info err';}
+}
+
+// ── PINE EDITOR ──
+async function translatePine(){
+  const code=document.getElementById('pineCode').value.trim();
+  if(!code)return;
+  const el=document.getElementById('pineInfo');
+  el.textContent='Translating...'; el.className='info';
+  try{
+    const d=await(await fetch('/api/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pine_code:code})})).json();
+    if(d.success){el.textContent='Translated: '+(d.strategy_name||'ok');el.className='info ok';await loadStrats();}
+    else{el.textContent=(d.issues||[]).join(', ');el.className='info err';}
+  }catch(e){el.textContent='Error';el.className='info err';}
+}
+
+// ── BACKTEST ──
+async function runBt(){
+  const s=document.getElementById('stratSel').value;
+  const c=parseFloat(document.getElementById('commInput').value)||.001;
+  if(!s)return;
+  status('Running backtest...',true);
+  document.getElementById('btnBt').disabled=true;
+  try{
+    const d=await(await fetch('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:s,commission:c})})).json();
+    if(d.error){status(d.error);} else{renderSum(d);renderTr(d);renderCh(d);status('Backtest Complete',true);tab('summary');}
+  }catch(e){status('Error: '+e.message);}
+  document.getElementById('btnBt').disabled=false;
+}
+
+// ── RENDER SUMMARY ──
+function renderSum(d){
+  document.getElementById('sumEmpty').classList.add('hide');
+  document.getElementById('sumContent').classList.remove('hide');
+  const m=d.metrics;
+  document.getElementById('mgrid').innerHTML=`
+    <div class="mcard"><div class="ml">Total Trades</div><div class="mv">${d.total_trades}</div><div class="ms">${d.bars} bars</div></div>
+    <div class="mcard"><div class="ml">Profit Factor</div><div class="mv ${m.profit_factor>=1?'pos':'neg'}">${m.profit_factor.toFixed(2)}</div></div>
+    <div class="mcard"><div class="ml">Win Rate</div><div class="mv">${(m.win_rate*100).toFixed(1)}%</div></div>
+    <div class="mcard"><div class="ml">Total Return</div><div class="mv ${m.total_return>=0?'pos':'neg'}">${(m.total_return*100).toFixed(1)}%</div></div>
+    <div class="mcard"><div class="ml">Sharpe Ratio</div><div class="mv">${m.sharpe_ratio.toFixed(2)}</div></div>
+    <div class="mcard"><div class="ml">Max Drawdown</div><div class="mv neg">-${(m.max_drawdown*100).toFixed(1)}%</div></div>`;
+  document.querySelector('#dtbl tbody').innerHTML=`
+    <tr><td>Profit Factor</td><td>${m.profit_factor.toFixed(4)}</td></tr>
+    <tr><td>Sharpe Ratio</td><td>${m.sharpe_ratio.toFixed(4)}</td></tr>
+    <tr><td>Total Return</td><td style="color:${m.total_return>=0?'var(--green)':'var(--red)'}">${(m.total_return*100).toFixed(2)}%</td></tr>
+    <tr><td>Max Drawdown</td><td style="color:var(--red)">-${(m.max_drawdown*100).toFixed(2)}%</td></tr>
+    <tr><td>Win Rate</td><td>${(m.win_rate*100).toFixed(2)}%</td></tr>
+    <tr><td>Avg Win</td><td style="color:var(--green)">${(m.avg_win*100).toFixed(4)}%</td></tr>
+    <tr><td>Avg Loss</td><td style="color:var(--red)">${(m.avg_loss*100).toFixed(4)}%</td></tr>
+    <tr><td>Expectancy</td><td>${(m.expectancy*100).toFixed(4)}%</td></tr>
+    <tr><td>Calmar Ratio</td><td>${m.calmar_ratio.toFixed(4)}</td></tr>`;
+}
+
+// ── RENDER TRADES ──
+let _tradeData=null;
+function renderTr(d){
+  _tradeData=d;
+  if(!d.trades.length)return;
+  document.getElementById('trEmpty').classList.add('hide');
+  document.getElementById('trContent').classList.remove('hide');
+  document.getElementById('trCnt').textContent=d.total_trades;
+  const tb=document.querySelector('#trTbl tbody');
+  tb.innerHTML='';
+  [...d.trades].reverse().forEach(t=>{
+    const dc=t.direction==='LONG'?'var(--green)':'var(--red)';
+    const pc=t.pnl_pct>=0?'var(--green)':'var(--red)';
+    tb.innerHTML+=`<tr><td>${t.id}</td><td style="text-align:right;color:${dc}">${t.direction}</td><td style="text-align:right;font-size:10px;font-family:var(--mono)">${t.entry_date||''}</td><td style="text-align:right;font-family:var(--mono)">$${t.entry_price.toFixed(2)}</td><td style="text-align:right;font-size:10px;font-family:var(--mono)">${t.exit_date||''}</td><td style="text-align:right;font-family:var(--mono)">$${t.exit_price.toFixed(2)}</td><td style="text-align:right;font-family:var(--mono);color:var(--text-2)">${t.bars_held||''}</td><td style="text-align:right;color:${pc};font-family:var(--mono)">${t.pnl_pct>=0?'+':''}${t.pnl_pct.toFixed(2)}%</td></tr>`;
+  });
+}
+
+// ── RENDER CHARTS ──
+let _chartData=null;
+function renderCh(d){
+  if(!d.equity_curve||!d.equity_curve.length)return;
+  document.getElementById('chEmpty').classList.add('hide');
+  document.getElementById('chContent').classList.remove('hide');
+  _chartData=d;
+  // Update titles with latest values
+  const lastEq=d.equity_curve[d.equity_curve.length-1];
+  const lastDd=d.drawdown_curve[d.drawdown_curve.length-1];
+  document.getElementById('eqTitle').textContent='Equity Curve — '+lastEq.toFixed(2);
+  document.getElementById('ddTitle').textContent='Drawdown — '+lastDd.toFixed(1)+'%';
+  _tryDrawCharts();
+}
+function _tryDrawCharts(){
+  if(!_chartData)return;
+  const cv=document.getElementById('eqCanvas');
+  const r=cv.getBoundingClientRect();
+  if(r.width<10) return;
+  drawLine('eqCanvas',_chartData.equity_curve,_chartData.dates,'#22c55e','rgba(34,197,94,.12)','$');
+  drawLine('ddCanvas',_chartData.drawdown_curve,_chartData.dates,'#ef4444','rgba(239,68,68,.12)','%');
+}
+function drawLine(id,vals,dates,lc,fc,unit){
+  const cv=document.getElementById(id),ctx=cv.getContext('2d');
+  const dpr=devicePixelRatio||1,rect=cv.getBoundingClientRect();
+  if(rect.width<10)return;
+  const CH=260;
+  cv.width=rect.width*dpr; cv.height=CH*dpr; ctx.scale(dpr,dpr);
+  const w=rect.width, h=CH;
+  const padL=58, padR=12, padT=12, padB=28;
+  const cw=w-padL-padR, ch=h-padT-padB;
+  ctx.clearRect(0,0,w,h);
+
+  const mn=Math.min(...vals), mx=Math.max(...vals), rng=mx-mn||1;
+
+  // Grid lines + Y-axis labels
+  ctx.textBaseline='middle'; ctx.font='10px "JetBrains Mono",monospace';
+  const gridN=4;
+  for(let i=0;i<=gridN;i++){
+    const y=padT+(i/gridN)*ch;
+    const val=mx-(i/gridN)*rng;
+    ctx.strokeStyle='#1e1e23'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(w-padR,y); ctx.stroke();
+    ctx.fillStyle='#52525b'; ctx.textAlign='right';
+    if(unit==='$') ctx.fillText(val.toFixed(val>=100?0:2),padL-6,y);
+    else ctx.fillText(val.toFixed(1)+'%',padL-6,y);
+  }
+
+  // X-axis date labels
+  if(dates&&dates.length){
+    ctx.fillStyle='#52525b'; ctx.textAlign='center'; ctx.textBaseline='top';
+    const nLabels=6;
+    for(let i=0;i<nLabels;i++){
+      const idx=Math.round(i*(dates.length-1)/(nLabels-1));
+      const x=padL+(idx/(vals.length-1))*cw;
+      const label=dates[idx]||'';
+      ctx.fillText(label.slice(5),x,h-padB+6); // show MM-DD
+    }
+  }
+
+  // Data line
+  ctx.strokeStyle=lc; ctx.lineWidth=1.5; ctx.lineJoin='round'; ctx.beginPath();
+  vals.forEach((v,i)=>{
+    const x=padL+(i/(vals.length-1))*cw;
+    const y=padT+((mx-v)/rng)*ch;
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  });
+  ctx.stroke();
+
+  // Gradient fill
+  const lastX=padL+cw;
+  ctx.lineTo(lastX,padT+ch); ctx.lineTo(padL,padT+ch); ctx.closePath();
+  const grad=ctx.createLinearGradient(0,padT,0,padT+ch);
+  grad.addColorStop(0,fc); grad.addColorStop(1,'transparent');
+  ctx.fillStyle=grad; ctx.fill();
+
+  // Hover crosshair setup
+  cv._chartMeta={vals,dates,mn,mx,rng,padL,padR,padT,padB,cw,ch,lc,fc,unit,w,h};
+  if(!cv._hasHover){
+    cv._hasHover=true;
+    cv.addEventListener('mousemove',function(e){_chartHover(this,e);});
+    cv.addEventListener('mouseleave',function(){_tryDrawCharts();});
+  }
+}
+function _chartHover(cv,e){
+  const meta=cv._chartMeta; if(!meta)return;
+  const rect=cv.getBoundingClientRect();
+  const mx=e.clientX-rect.left;
+  const {vals,dates,mn,rng,padL,padR,padT,padB,cw,ch,lc,unit,w,h}=meta;
+  const maxV=meta.mx;
+  if(mx<padL||mx>w-padR)return;
+  const frac=(mx-padL)/cw;
+  const idx=Math.round(frac*(vals.length-1));
+  if(idx<0||idx>=vals.length)return;
+  const val=vals[idx];
+  const x=padL+(idx/(vals.length-1))*cw;
+  const y=padT+((maxV-val)/rng)*ch;
+
+  // Redraw base chart then overlay crosshair
+  const id=cv.id;
+  if(id==='eqCanvas') drawLine(id,_chartData.equity_curve,_chartData.dates,'#22c55e','rgba(34,197,94,.12)','$');
+  else drawLine(id,_chartData.drawdown_curve,_chartData.dates,'#ef4444','rgba(239,68,68,.12)','%');
+  // Remove hover listener temporarily to avoid recursion, it was already re-added by drawLine
+  // Draw crosshair on top
+  const dpr=devicePixelRatio||1;
+  const ctx=cv.getContext('2d');
+  ctx.save(); ctx.scale(1/dpr,1/dpr); ctx.scale(dpr,dpr);
+  // Vertical line
+  ctx.strokeStyle='rgba(255,255,255,.2)'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+ch); ctx.stroke(); ctx.setLineDash([]);
+  // Dot
+  ctx.fillStyle=lc; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.stroke();
+  // Tooltip box
+  const dateStr=(dates&&dates[idx])||'';
+  const valStr=unit==='$'?val.toFixed(2):val.toFixed(1)+'%';
+  const txt=dateStr+' | '+valStr;
+  ctx.font='600 11px "JetBrains Mono",monospace';
+  const tw=ctx.measureText(txt).width+12;
+  let tx=x-tw/2; if(tx<padL)tx=padL; if(tx+tw>w-padR)tx=w-padR-tw;
+  const ty=y-28;
+  ctx.fillStyle='rgba(15,15,18,.92)'; ctx.strokeStyle='rgba(255,255,255,.1)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.roundRect(tx,ty,tw,20,4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#fafafa'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(txt,tx+tw/2,ty+10);
+  ctx.restore();
+}
+
+// ── DOWNLOAD HELPERS ──
+function _downloadFile(filename, content, mime='text/csv'){
+  const blob=new Blob([content],{type:mime});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function downloadTrades(){
+  if(!_tradeData||!_tradeData.trades.length)return;
+  const hdr='#,Direction,Entry Date,Entry Price,Exit Date,Exit Price,Bars Held,PnL %\n';
+  const rows=_tradeData.trades.map(t=>
+    `${t.id},${t.direction},${t.entry_date||''},${t.entry_price.toFixed(2)},${t.exit_date||''},${t.exit_price.toFixed(2)},${t.bars_held||''},${t.pnl_pct.toFixed(2)}`
+  ).join('\n');
+  _downloadFile(`trades_${_tradeData.strategy||'backtest'}.csv`, hdr+rows);
+}
+function downloadSummary(){
+  if(!_tradeData||!_tradeData.metrics)return;
+  const m=_tradeData.metrics;
+  const hdr='Metric,Value\n';
+  const rows=[
+    `Strategy,${_tradeData.strategy||''}`,
+    `Total Trades,${_tradeData.total_trades}`,
+    `Bars,${_tradeData.bars}`,
+    `Profit Factor,${m.profit_factor.toFixed(4)}`,
+    `Sharpe Ratio,${m.sharpe_ratio.toFixed(4)}`,
+    `Total Return,${(m.total_return*100).toFixed(2)}%`,
+    `Max Drawdown,-${(m.max_drawdown*100).toFixed(2)}%`,
+    `Win Rate,${(m.win_rate*100).toFixed(2)}%`,
+    `Avg Win,${(m.avg_win*100).toFixed(4)}%`,
+    `Avg Loss,${(m.avg_loss*100).toFixed(4)}%`,
+    `Expectancy,${(m.expectancy*100).toFixed(4)}%`,
+    `Calmar Ratio,${m.calmar_ratio.toFixed(4)}`,
+  ].join('\n');
+  _downloadFile(`summary_${_tradeData.strategy||'backtest'}.csv`, hdr+rows);
+}
+function downloadChartData(){
+  if(!_chartData)return;
+  const hdr='Date,Equity,Drawdown %\n';
+  const rows=_chartData.equity_curve.map((eq,i)=>{
+    const date=(_chartData.dates&&_chartData.dates[i])||i;
+    const dd=_chartData.drawdown_curve[i]||0;
+    return `${date},${eq.toFixed(4)},${dd.toFixed(2)}`;
+  }).join('\n');
+  _downloadFile(`chart_${_chartData.strategy||'backtest'}.csv`, hdr+rows);
+}
+let _valData=null;
+function downloadValidation(){
+  if(!_valData)return;
+  _downloadFile(`validation_${_valData.strategy||'result'}.json`, JSON.stringify(_valData,null,2), 'application/json');
+}
+
+// ── OPTIMIZE ──
+async function runOpt(){
+  const s=document.getElementById('stratSel').value; if(!s)return;
+  status('Optimizing...',true); document.getElementById('btnOpt').disabled=true;
+  try{
+    const d=await(await fetch('/api/optimize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:s})})).json();
+    if(d.error) status(d.error);
+    else status('Best PF: '+d.best_score+' | '+JSON.stringify(d.best_params),true);
+  }catch(e){status('Error');}
+  document.getElementById('btnOpt').disabled=false;
+}
+
+// ── VALIDATION ──
+async function runVal(){
+  const s=document.getElementById('stratSel').value; if(!s)return;
+  tab('validation');
+  document.getElementById('valEmpty').classList.add('hide');
+  document.getElementById('valContent').classList.remove('hide');
+  resetVal(); status('Running validation...',true);
+  document.getElementById('btnVal').disabled=true;
+  vbadge('vb1','badge-run','<span class="spin"></span>Running');
+  try{
+    const d=await(await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      strategy:s,
+      n_perms_is:parseInt(document.getElementById('isPerms').value)||200,
+      n_perms_wf:parseInt(document.getElementById('wfPerms').value)||100,
+      train_years:parseFloat(document.getElementById('trainInput').value)||4
+    })})).json();
+    if(d.error){status(d.error);document.getElementById('btnVal').disabled=false;return;}
+    if(d.job_id) pollVal(d.job_id);
+    else if(d.result){showVal(d.result);document.getElementById('btnVal').disabled=false;}
+  }catch(e){status('Error');document.getElementById('btnVal').disabled=false;}
+}
+function resetVal(){
+  for(let i=1;i<=4;i++){vbadge('vb'+i,'badge-wait','Pending');document.getElementById('vd'+i).textContent='Waiting';}
+  document.getElementById('vbox').classList.add('hide');
+}
+function vbadge(id,cls,html){const el=document.getElementById(id);el.className='badge '+cls;el.innerHTML=html;}
+function pollVal(jid){
+  let fs=1;
+  const fi=setInterval(()=>{if(fs<=4){for(let i=1;i<fs;i++)vbadge('vb'+i,'badge-run','Running');vbadge('vb'+fs,'badge-run','<span class="spin"></span>Running');fs++;}},7000);
+  pollId=setInterval(async()=>{
+    try{
+      const d=await(await fetch('/api/validate/'+jid)).json();
+      if(d.status==='complete'){clearInterval(pollId);clearInterval(fi);showVal(d.result);document.getElementById('btnVal').disabled=false;}
+      else if(d.status==='error'){clearInterval(pollId);clearInterval(fi);status('Error: '+(d.error||''));document.getElementById('btnVal').disabled=false;}
+    }catch(e){clearInterval(pollId);clearInterval(fi);status('Poll error');document.getElementById('btnVal').disabled=false;}
+  },2000);
+}
+function showVal(r){
+  _valData=r; _valData.strategy=document.getElementById('stratSel').value;
+  document.getElementById('btnDlVal').style.display='';
+  document.getElementById('vd1').textContent='PF: '+(r.is_pf||0).toFixed(4)+' | '+JSON.stringify(r.best_params||{});
+  vbadge('vb1','badge-pass','Done');
+  if(r.verdict==='QUICK'){
+    for(let i=2;i<=4;i++){vbadge('vb'+i,'badge-wait','Skipped');document.getElementById('vd'+i).textContent='Quick mode';}
+    showVbox('QUICK','Permutation tests skipped','v-meh');status('Quick Done',true);return;
+  }
+  const ip=r.is_pvalue<.05;
+  document.getElementById('vd2').textContent='p='+r.is_pvalue.toFixed(6);
+  vbadge('vb2',ip?'badge-pass':'badge-fail',ip?'p<0.05':'p>=0.05');
+  document.getElementById('vd3').textContent='OOS PF: '+(r.oos_pf||0).toFixed(4)+' | Sharpe: '+(r.oos_sharpe||0).toFixed(4);
+  const op=(r.oos_pf||0)>=1.1;
+  vbadge('vb3',op?'badge-pass':'badge-fail',op?'PF>=1.1':'PF<1.1');
+  const wp=r.wf_pvalue<(r.wf_threshold||.05);
+  document.getElementById('vd4').textContent='p='+r.wf_pvalue.toFixed(6)+' | thresh: '+(r.wf_threshold||.05);
+  vbadge('vb4',wp?'badge-pass':'badge-fail',wp?'Pass':'Fail');
+  const v=r.verdict||'UNKNOWN';
+  const vm={VALIDATED:'Statistically significant edge detected.',OVERFIT:'Performance indistinguishable from random.',POOR:'Weak metrics, not worth trading.'};
+  showVbox(v,vm[v]||'',{VALIDATED:'v-ok',OVERFIT:'v-bad',POOR:'v-meh'}[v]||'');
+  status('Verdict: '+v,true);
+}
+function showVbox(t,s,c){
+  const b=document.getElementById('vbox');
+  b.classList.remove('hide','v-ok','v-bad','v-meh');
+  b.classList.add(c);
+  document.getElementById('vtext').textContent=t;
+  document.getElementById('vsub').textContent=s;
+}
+</script>
+</body>
+</html>

@@ -308,12 +308,28 @@ def main():
         print(f"Error parsing PineScript: {e}")
         return 1
     
-    # Configure backtest
+    # Configure backtest using parsed strategy settings
+    qty_type = "percent_of_equity"
+    if settings.default_qty_type == "percent_of_equity":
+        qty_type = "percent_of_equity"
+    elif settings.default_qty_type == "fixed":
+        qty_type = "fixed"
+
+    # Use PineScript settings if they differ from defaults, otherwise use CLI args
+    initial_capital = settings.initial_capital if settings.initial_capital != 100000.0 else args.initial_capital
+    commission_pct = settings.commission_value if settings.commission_value != 0.1 else args.commission_pct
+
     config = BacktestConfig(
-        initial_capital=args.initial_capital,
-        commission_pct=args.commission_pct,
+        initial_capital=initial_capital,
+        commission_pct=commission_pct,
         order_size_pct=settings.default_qty_value,
+        qty_type=qty_type,
+        pyramiding=settings.pyramiding,
     )
+    print(f"  Capital: ${initial_capital:,.0f}")
+    print(f"  Commission: {commission_pct}%")
+    print(f"  Position Size: {settings.default_qty_value}% of equity")
+    print(f"  Pyramiding: {settings.pyramiding}")
     
     # Run backtest
     print("\nRunning backtest...")

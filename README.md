@@ -1,41 +1,148 @@
-# Wale PineScript to Python Engine
+# Wale Backtest Engine
 
-A professional desktop application and CLI for backtesting TradingView PineScript strategies locally with exact trade-by-trade validation.
+A local backtesting platform that translates PineScript strategies into Python code, runs them against real market data, and validates results with a 4-step statistical pipeline. Ships as both a Flask web app and a standalone Windows EXE.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 ---
 
-## NEW: Desktop GUI Application
+## Screenshots
 
-The engine now includes a professional desktop application with:
+### Web Backtester (Flask)
 
-- **Clean Dark Theme UI** - Modern, professional interface
-- **Databento Integration** - Fetch live/historical market data with your API key
-- **PineScript Editor** - Load and edit .pine files directly
-- **Real-time Results** - View trades, metrics, and charts instantly
-- **Standalone EXE** - Package as single executable for distribution
+![Web Dashboard](docs/screenshots/web_dashboard.png)
 
-### Quick Launch
+Dark-themed single-page app running at `127.0.0.1:5000`. Left sidebar handles data loading, strategy selection, Pine/Python editors, and settings. Right panel shows Summary, Trades, Charts, and Validation tabs.
+
+### Desktop GUI (PySide6)
+
+![Desktop GUI](docs/screenshots/desktop_gui.png)
+
+Standalone desktop application with Databento integration and the same backtesting engine under the hood.
+
+---
+
+## What It Does
+
+1. **Translates PineScript to Python.** Paste a TradingView strategy, hit Translate, and the engine parses indicators, conditions, and entries/exits into a working Python class.
+
+2. **Runs backtests that match TradingView.** Signals are generated on bar close and filled at the next bar's open price, matching TV's default execution model. Entry and exit prices use actual open values, not close.
+
+3. **Validates strategy robustness.** The 4-step pipeline runs in-sample optimization, permutation testing (Monte Carlo p-value), walk-forward out-of-sample testing, and walk-forward permutation testing. A strategy either passes or it doesn't.
+
+4. **Lets you write strategies directly in Python.** The Python editor validates your code by actually running it against synthetic data before saving. If `generate_signals()` crashes, the file gets deleted and you get the error back.
+
+---
+
+## Quick Start
 
 ```bash
-# Launch the GUI application
+git clone https://github.com/WaleA-Dev/wale-pinescript-engine.git
+cd wale-pinescript-engine
+pip install -r requirements.txt
+
+# Launch the web app
+python web_app.py
+# Opens http://127.0.0.1:5000 in your browser
+
+# Or launch the desktop GUI
 python app.py
 ```
 
 ### Build Standalone EXE
 
 ```bash
-# Install PyInstaller
 pip install pyinstaller
-
-# Build the executable
 pyinstaller PineScriptBacktester.spec
-
-# Run it
 ./dist/PineScriptBacktester.exe
 ```
+
+---
+
+## How to Use the Web App
+
+### 1. Load Data
+
+Pick a source from the sidebar:
+
+- **Yahoo Finance** - Type a ticker (QQQ, NVDA, BTC-USD), pick an interval (1H, 1D, 1W), click Fetch.
+- **Dukascopy** - For forex tick data. Enter a pair (EUR-USD), date range, and resampling period.
+- **CSV Upload** - Drop in any OHLCV CSV file.
+
+### 2. Pick or Write a Strategy
+
+The engine ships with 12 built-in strategies (Donchian, EMA Cross, MACD, RSI, NDX Trader, etc). Select one from the dropdown.
+
+Or write your own:
+
+**Pine Editor** - Paste PineScript, click Translate. The engine parses it, generates a Python file, and registers it in the dropdown.
+
+**Python Editor** - Write a `BaseStrategy` subclass directly. The editor pre-fills a working SMA crossover template. Click Save & Register. The backend validates syntax, checks for a `BaseStrategy` subclass, imports the module, and test-runs `generate_signals()` on 100 bars of synthetic data. If anything fails, you get the error and the file is cleaned up.
+
+### 3. Run Backtest
+
+Click "Run Backtest". The Summary tab shows key metrics (Profit Factor, Sharpe, Win Rate, Max Drawdown, Total Return). The Trades tab lists every trade with entry/exit dates, prices, bars held, and P&L. The Charts tab draws equity curve and drawdown with axis labels, date ticks, and a hover crosshair.
+
+### 4. Validate
+
+Click "4-Step Validation" to run the full statistical pipeline:
+
+| Step | What It Does |
+|------|-------------|
+| 1. In-Sample Optimization | Grid search for best parameters on training data |
+| 2. IS Permutation Test | Shuffles returns 200+ times to get a Monte Carlo p-value |
+| 3. Walk-Forward OOS | Tests optimized params on unseen data |
+| 4. WF Permutation Test | Confirms OOS results aren't just luck |
+
+Final verdict: **VALIDATED**, **OVERFIT**, or **POOR**.
+
+### 5. Export
+
+Every tab has an Export button:
+
+- Summary tab: metrics as CSV
+- Trades tab: full trade list as CSV (with dates, prices, bars held, P&L)
+- Charts tab: equity curve and drawdown as CSV
+- Validation tab: full results as JSON
+
+---
+
+## Execution Model
+
+The engine matches TradingView's default fill behavior:
+
+| Event | Evaluated | Filled |
+|-------|-----------|--------|
+| Entry signal | Bar N close | Bar N+1 open |
+| Exit signal | Bar N close | Bar N+1 open |
+
+On bars where position changes, the return is calculated from open to close (since the fill happened at open). On bars where position is held, the return is close-to-close. Commission is deducted on every position change.
+
+Trade entry and exit prices in the trade list are the actual open prices where fills occurred, not close prices.
+
+---
+
+## Pine Translator
+
+The translator handles these Pine functions:
+
+| Pine Function | Python Output |
+|--------------|--------------|
+| `ta.ema(src, len)` | `src.ewm(span=len, adjust=False).mean()` |
+| `ta.sma(src, len)` | `src.rolling(len).mean()` |
+| `ta.rma(src, len)` | `src.ewm(alpha=1/len, adjust=False).mean()` |
+| `ta.rsi(src, len)` | Wilder's RMA on gain/loss (matches TV exactly) |
+| `ta.atr(len)` | RMA on true range |
+| `ta.macd(src, fast, slow, sig)` | EMA difference with custom parameters |
+| `ta.crossover(a, b)` | `(a > b) & (a.shift(1) <= b.shift(1))` |
+| `ta.crossunder(a, b)` | `(a < b) & (a.shift(1) >= b.shift(1))` |
+| `ta.highest(src, len)` | `src.rolling(len).max()` |
+| `ta.lowest(src, len)` | `src.rolling(len).min()` |
+
+The translator also extracts `input.int()`, `input.float()`, `input.bool()` declarations and generates a parameter grid for optimization.
+
+Not supported yet: `ta.adx`, `ta.stoch`, `ta.bb`, `request.*`, `array.*`, ternary expressions.
 
 ---
 
@@ -43,258 +150,90 @@ pyinstaller PineScriptBacktester.spec
 
 ```
 wale-pinescript-engine/
-├── app.py                      # GUI application entry point
-├── backtest_engine.py          # CLI entry point
-├── build_exe.py                # EXE build script
-├── PineScriptBacktester.spec   # PyInstaller config
-├── requirements.txt            # Python dependencies
-├── gui/
-│   ├── __init__.py
-│   └── main_window.py          # Main GUI window
-├── data_providers/
-│   ├── __init__.py
-│   └── databento_provider.py   # Databento API integration
-├── src/
-│   ├── __init__.py
-│   ├── indicators.py           # EMA, RMA, ATR, ADX, RSI, MACD, etc.
-│   ├── parser.py               # PineScript parameter extraction
-│   ├── backtest.py             # Core backtest engine
-│   └── validator.py            # TradingView comparison
-├── tests/
-│   ├── __init__.py
-│   └── test_indicators.py      # Indicator unit tests
-└── docs/
-    ├── 01-engine-architecture.md
-    ├── 02-accuracy-testing.md
-    └── 03-cli-reference.md
+  web_app.py                  Flask backend (web UI entry point)
+  app.py                      Desktop GUI entry point
+  backtest_engine.py          CLI entry point
+  templates/
+    converge.html             Web UI (single-page dashboard)
+  src/
+    bar_returns.py            Bar-level return computation with next-bar-open fills
+    data_loader.py            Yahoo, Dukascopy, CSV loading
+    optimization.py           Grid search
+    permutation.py            Monte Carlo permutation engine
+    strategies/
+      base.py                 BaseStrategy ABC with indicator helpers
+      donchian.py             Donchian breakout
+      ema_crossover.py        EMA crossover
+      ndx_trader.py           NDX trend + RSI pullback
+      ...                     12 strategies total
+    pine_translator/
+      parser.py               PineScript AST extraction
+      translator.py           Pine to Python code generation
+      pipeline.py             End-to-end translate + save + register
+      validator.py            Syntax and structure validation
+    validation/
+      full_validation.py      4-step validation pipeline
+      in_sample_permutation.py
+      walk_forward.py
+  tests/                      58 unit tests
+  data/
+    cache/                    Downloaded data cache
+    uploads/                  CSV uploads
+  docs/
+    screenshots/
+  gui/
+    main_window.py            PySide6 desktop application
+  data_providers/
+    databento_provider.py     Databento API integration
 ```
 
 ---
 
-## What This Engine Does
+## Writing a Python Strategy
 
-1. **Parses PineScript** - Extracts strategy parameters, indicator logic, and entry/exit rules from your `.pine` files
-2. **Rebuilds in Python** - Implements equivalent indicator calculations (EMA, ATR, ADX, etc.) matching PineScript's math exactly
-3. **Runs Backtests** - Executes the strategy on OHLC data with proper fill timing, commission, and position sizing
-4. **Validates Output** - Compares trade-by-trade results against TradingView's Excel export to ensure accuracy
-5. **Feeds Analysis** - Produces trade lists for Monte Carlo stress testing and robustness analysis
-
----
-
-## Why Build This?
-
-TradingView's backtester is great for visualization but has limitations:
-
-- **No programmatic access** - You cannot run thousands of parameter combinations
-- **No custom robustness tests** - Walk-forward, CPCV, permutation tests are impossible
-- **Limited export** - Getting raw trade data requires manual Excel downloads
-
-This engine solves all of that while maintaining TradingView-equivalent accuracy.
-
----
-
-## Quick Start
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/WaleA-Dev/wale-pinescript-engine.git
-cd wale-pinescript-engine
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### GUI Application
-
-```bash
-# Launch the desktop application
-python app.py
-```
-
-**Using the GUI:**
-1. Enter your Databento API key (or load a CSV file)
-2. Enter stock symbol and select timeframe
-3. Load or paste your PineScript strategy
-4. Click "Run Backtest"
-5. View results in Summary, Trade List, and Charts tabs
-
-### CLI Usage
-
-```bash
-python backtest_engine.py \
-    --csv your_ohlc_data.csv \
-    --pine your_strategy.pine \
-    --run_step1 true
-```
-
-### With TradingView Validation
-
-```bash
-python backtest_engine.py \
-    --csv your_ohlc_data.csv \
-    --pine your_strategy.pine \
-    --excel tradingview_export.xlsx \
-    --run_step1 true
-```
-
----
-
-## Data Sources
-
-### Databento API
-
-The application supports Databento for live/historical market data:
-
-1. Get an API key from [databento.com](https://databento.com)
-2. Enter the key in the application
-3. Select symbol, timeframe, and date range
-4. Click "Fetch Data"
-
-### CSV Files
-
-Alternatively, load data from CSV files with these columns:
-- `time` or `date` or `datetime`: Timestamp
-- `open`: Open price
-- `high`: High price
-- `low`: Low price
-- `close`: Close price
-- `volume`: Trading volume (optional)
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Engine Architecture](docs/01-engine-architecture.md) | How the engine works |
-| [Accuracy Testing](docs/02-accuracy-testing.md) | Validating your implementation |
-| [CLI Reference](docs/03-cli-reference.md) | Command-line documentation |
-
----
-
-## Architecture Overview
-
-```
-[PineScript File] --> [Parser] --> [StrategyParams]
-                                         |
-[OHLC CSV Data] --> [Indicator Engine] --+--> [Backtest Engine] --> [Trade List]
-                                                                          |
-[TradingView Excel Export] --> [Validator] <------------------------------+
-                                    |
-                              [Validation Report]
-```
-
-### Core Components
-
-| Component | Purpose |
-|-----------|---------|
-| GUI Application | Desktop interface for all operations |
-| Databento Provider | Fetch live/historical market data |
-| Parameter Parser | Extracts inputs from PineScript |
-| Indicator Library | EMA, RMA, ATR, ADX implementations |
-| Signal Logic | Entry/exit condition evaluation |
-| Backtest Loop | Position management, fill execution |
-| Trade Validator | Compare vs TradingView exports |
-
----
-
-## Indicator Implementations
-
-The engine implements PineScript indicators with exact mathematical equivalence:
-
-### Exponential Moving Average (EMA)
+Every strategy inherits from `BaseStrategy` and implements `generate_signals()`:
 
 ```python
-def ema(series: np.ndarray, length: int) -> np.ndarray:
-    alpha = 2.0 / (length + 1)
-    # Initialize with SMA of first 'length' values
-    # Then apply recursive: out[i] = alpha * series[i] + (1 - alpha) * out[i-1]
+import numpy as np
+import pandas as pd
+from src.strategies.base import BaseStrategy
+
+class MyStrategy(BaseStrategy):
+    def __init__(self, **params):
+        super().__init__(**params)
+        self.params.setdefault('fast', 10)
+        self.params.setdefault('slow', 30)
+
+    def generate_signals(self, df):
+        fast = df['close'].rolling(self.params['fast']).mean()
+        slow = df['close'].rolling(self.params['slow']).mean()
+        signal = pd.Series(0, index=df.index)
+        signal[fast > slow] = 1
+        signal[fast < slow] = -1
+        return signal
+
+    def param_grid(self):
+        return {'fast': [5, 10, 20], 'slow': [20, 30, 50]}
 ```
 
-**Key detail:** PineScript initializes EMA with an SMA seed. Many Python implementations skip this, causing divergence on early bars.
+Signal values: `1` = long, `-1` = short, `0` = flat.
 
-### Running Moving Average (RMA)
+The `param_grid()` method is optional but needed for optimization and validation.
+
+---
+
+## Indicator Helpers
+
+`BaseStrategy` includes these static methods so you don't have to rewrite them:
 
 ```python
-def rma(series: np.ndarray, length: int) -> np.ndarray:
-    alpha = 1.0 / length  # Different from EMA!
-    # Same recursive structure as EMA but with alpha = 1/length
-```
-
-**Key detail:** RMA uses `alpha = 1/length`, not `2/(length+1)`. This is used internally by ATR and ADX.
-
-### Average True Range (ATR)
-
-```python
-def atr(high, low, close, length):
-    tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
-    return rma(tr, length)  # NOT ema!
-```
-
-**Key detail:** TradingView's ATR uses RMA, not EMA. Using EMA will cause drift over time.
-
----
-
-## Fill Timing Model
-
-The engine matches TradingView's default execution model:
-
-| Event | When Evaluated | When Filled |
-|-------|----------------|-------------|
-| Entry Signal | Bar N close | Bar N+1 open |
-| Exit Signal | Bar N close | Bar N+1 open |
-| Stop Loss | Bar N | Bar N (intrabar at stop price) |
-| Trailing Stop | Bar N | Bar N (intrabar at trail price) |
-
-**Important:** Signals are computed on bar close but executed on next bar open. This is PineScript's `process_orders_on_close=false` behavior.
-
----
-
-## Validation Against TradingView
-
-The engine performs trade-by-trade validation:
-
-### What Gets Compared
-
-| Field | Tolerance | Notes |
-|-------|-----------|-------|
-| Entry Time | Exact | Must match to the bar |
-| Exit Time | Exact | Must match to the bar |
-| Entry Price | 0.01 | Allows for rounding |
-| Exit Price | 0.01 | Allows for rounding |
-| Exit Signal | Exact | SL, Trail, PT, OB, etc. |
-| PnL | 2% | Accounts for commission differences |
-
----
-
-## Common Accuracy Issues
-
-| Issue | Symptom | Fix |
-|-------|---------|-----|
-| EMA Drift | First trades differ | Initialize with SMA seed |
-| ATR Wrong | Stop losses trigger wrong | Use RMA not EMA |
-| Fill Timing | Trades one bar off | Execute on next bar open |
-| Position Sizing | PnL accumulates error | Use floor() for quantity |
-
-See [Accuracy Testing Guide](docs/02-accuracy-testing.md) for detailed debugging steps.
-
----
-
-## Output Files
-
-```
-backtest/out/
-├── validation_report.txt       # TradingView comparison
-├── research_outputs/
-│   └── step1/
-│       ├── trade_list.csv      # All trades
-│       ├── equity_curve.csv    # Bar-by-bar equity
-│       └── step1_report.txt    # Performance summary
-└── plots/
-    ├── step1_equity_drawdown.png
-    └── step1_monthly_returns.png
+self.calc_ema(series, span)      # Exponential moving average
+self.calc_sma(series, window)    # Simple moving average
+self.calc_rsi(series, period)    # RSI with Wilder's RMA (alpha=1/period)
+self.calc_atr(df, period)        # Average true range using RMA
+self.calc_macd(series, fast, slow, signal)  # Returns (macd, signal_line, histogram)
+self.crossover(a, b)             # True when a crosses above b
+self.crossunder(a, b)            # True when a crosses below b
 ```
 
 ---
@@ -302,74 +241,46 @@ backtest/out/
 ## Running Tests
 
 ```bash
-# Run all tests
 python -m pytest tests/ -v
 
-# Run specific test file
-python -m pytest tests/test_indicators.py -v
+# 58 tests covering bar_returns, strategies, translator,
+# parser, permutation, walk-forward, data loader, validation
 ```
 
 ---
 
-## Programmatic Usage
+## Data Sources
 
-```python
-from src.indicators import ema, atr, adx, rsi
-from src.parser import PineScriptParser, StrategyParams
-from src.backtest import BacktestEngine, BacktestConfig
-from src.validator import TradingViewValidator
+### Yahoo Finance
+Type any ticker Yahoo supports. Daily data goes back decades. Hourly data is limited to the last 730 days by Yahoo's API.
 
-# Load and parse strategy
-parser = PineScriptParser(pine_path='strategy.pine')
-params = parser.parse_params()
+### Dukascopy
+Forex tick data from Dukascopy's free archive. Specify a date range and resampling period (1min to 1D). Requires `duka-dl` package (`pip install duka-dl`).
 
-# Configure backtest
-config = BacktestConfig(
-    initial_capital=100000,
-    commission_pct=0.1,
-)
-
-# Run backtest
-engine = BacktestEngine(config=config, params=params)
-result = engine.run(df)  # df is your OHLC DataFrame
-
-# Access results
-print(f"Total trades: {result.total_trades}")
-print(f"Win rate: {result.win_rate:.1f}%")
-print(f"Profit factor: {result.profit_factor:.2f}")
-
-# Validate against TradingView
-validator = TradingViewValidator(excel_path='tv_export.xlsx')
-validation = validator.validate(result.trades)
-print(validation.message)
-```
+### CSV Upload
+Any CSV with `open`, `high`, `low`, `close` columns. The first column should be a timestamp. Volume is optional.
 
 ---
 
 ## Requirements
 
 - Python 3.10+
-- Windows 10/11 (for EXE build)
-- Databento API key (optional, for live data)
+- Windows 10/11 (for EXE builds)
+- Dependencies: Flask, pandas, numpy, scipy, matplotlib
 
-### Dependencies
-
-- PySide6 (Qt for Python) - GUI framework
-- pandas - Data manipulation
-- numpy - Numerical computing
-- scipy - Scientific computing
-- matplotlib - Charts and plotting
-- databento - Market data API
-- pyinstaller - EXE packaging
+Optional:
+- PySide6 (for desktop GUI)
+- Databento API key (for live data in desktop app)
+- duka-dl (for Dukascopy forex data)
 
 ---
 
 ## License
 
-CC BY-NC-SA 4.0. You can use, modify, and share this code, but NOT for commercial purposes or sale. If you build on it, share your improvements under the same license. No warranty. Use at your own risk.
+CC BY-NC-SA 4.0. Free to use and modify for personal and research purposes. Not for commercial use or resale. If you build on it, share your work under the same license. No warranty.
 
 ---
 
 ## Related Projects
 
-- [Wale Monte Carlo Engine](https://github.com/WaleA-Dev/wale-montecarlo-engine) - Stress test your validated trades with 200K+ simulations
+- [Wale Monte Carlo Engine](https://github.com/WaleA-Dev/wale-montecarlo-engine) - Stress test validated trades with 200K+ simulations

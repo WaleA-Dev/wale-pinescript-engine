@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
+import pandas as pd
+from data_providers.databento_provider import DatabentoProvider
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
@@ -30,6 +32,7 @@ class BacktestWorker(QThread):
     progress = Signal(int, str)
     finished = Signal(object)
     error = Signal(str)
+    settings_parsed = Signal(object)  # Emit parsed strategy settings
 
     def __init__(self, df, pine_code, config):
         super().__init__()
@@ -49,13 +52,32 @@ class BacktestWorker(QThread):
             params = parser.parse_params()
             settings = parser.parse_strategy_settings()
 
+            # Emit parsed settings so GUI can update
+            self.settings_parsed.emit(settings)
+
             self.progress.emit(40, "Configuring backtest...")
 
-            # Configure engine
+            # Use PineScript strategy() settings, with GUI as fallback
+            initial_capital = settings.initial_capital if settings.initial_capital != 100000.0 else self.config.get('initial_capital', 100000)
+            commission_pct = settings.commission_value if settings.commission_value != 0.1 else self.config.get('commission_pct', 0.1)
+
+            # Determine position sizing from strategy settings
+            qty_type = "percent_of_equity"
+            if settings.default_qty_type == "percent_of_equity":
+                order_size_pct = settings.default_qty_value
+                qty_type = "percent_of_equity"
+            elif settings.default_qty_type == "fixed":
+                order_size_pct = 100.0
+                qty_type = "fixed"
+            else:
+                order_size_pct = self.config.get('order_size_pct', 100)
+
             config = BacktestConfig(
-                initial_capital=self.config.get('initial_capital', 100000),
-                commission_pct=self.config.get('commission_pct', 0.1),
-                order_size_pct=self.config.get('order_size_pct', 100),
+                initial_capital=initial_capital,
+                commission_pct=commission_pct,
+                order_size_pct=order_size_pct,
+                qty_type=qty_type,
+                pyramiding=settings.pyramiding,
             )
 
             self.progress.emit(60, "Running backtest...")
@@ -68,7 +90,27 @@ class BacktestWorker(QThread):
             self.finished.emit(result)
 
         except Exception as e:
-            self.error.emit(str(e))
+            import traceback
+            self.error.emit(f"{str(e)}\n{traceback.format_exc()}")
+
+
+class ValidateKeyWorker(QThread):
+    """Worker thread for validating Databento API key (keeps UI responsive)."""
+    result = Signal(bool, str)
+
+    def __init__(self, api_key: str):
+        super().__init__()
+        self.api_key = api_key
+
+    def run(self):
+        try:
+            # Uses pre-imported DatabentoProvider
+            provider = DatabentoProvider(api_key=self.api_key)
+            is_valid, message = provider.validate_api_key()
+            self.result.emit(is_valid, message)
+            
+        except Exception as e:
+            self.result.emit(False, f"Validation error: {str(e)}")
 
 
 class MainWindow(QMainWindow):
@@ -86,6 +128,7 @@ class MainWindow(QMainWindow):
         self.current_data = None
         self.current_result = None
         self.worker = None
+        self._validate_key_worker = None
 
         # Setup UI
         self._setup_ui()
@@ -141,21 +184,33 @@ class MainWindow(QMainWindow):
 
         data_layout.addLayout(api_layout)
 
-        # Symbol and timeframe
+        # Symbol and exchange
         symbol_layout = QHBoxLayout()
         self.symbol_input = QLineEdit()
-        self.symbol_input.setPlaceholderText("NDAQ")
+        self.symbol_input.setPlaceholderText("e.g. NDAQ, SCHD, AAPL")
         self.symbol_input.setText("NDAQ")
         symbol_layout.addWidget(QLabel("Symbol:"))
         symbol_layout.addWidget(self.symbol_input)
 
+        self.exchange_combo = QComboBox()
+        self.exchange_combo.addItems(['AUTO', 'NASDAQ', 'NYSE', 'AMEX'])
+        self.exchange_combo.setCurrentText('AUTO')
+        self.exchange_combo.setToolTip("Auto-detect exchange from ticker, or select manually")
+        symbol_layout.addWidget(QLabel("Exchange:"))
+        symbol_layout.addWidget(self.exchange_combo)
+
+        data_layout.addLayout(symbol_layout)
+
+        # Timeframe
+        tf_layout = QHBoxLayout()
         self.timeframe_combo = QComboBox()
         self.timeframe_combo.addItems(['1m', '5m', '15m', '30m', '1H', '4H', '1D'])
         self.timeframe_combo.setCurrentText('1H')
-        symbol_layout.addWidget(QLabel("Timeframe:"))
-        symbol_layout.addWidget(self.timeframe_combo)
+        tf_layout.addWidget(QLabel("Timeframe:"))
+        tf_layout.addWidget(self.timeframe_combo)
+        tf_layout.addStretch()
 
-        data_layout.addLayout(symbol_layout)
+        data_layout.addLayout(tf_layout)
 
         # Date range
         date_layout = QHBoxLayout()
@@ -392,15 +447,18 @@ class MainWindow(QMainWindow):
         return widget
 
     def _create_charts_tab(self) -> QWidget:
-        """Create charts tab."""
+        """Create charts tab with image-based rendering."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        # Placeholder for charts
-        self.charts_label = QLabel("Run a backtest to see equity curve and charts")
-        self.charts_label.setAlignment(Qt.AlignCenter)
-        self.charts_label.setStyleSheet("color: #888; font-size: 14px;")
-        layout.addWidget(self.charts_label)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+
+        self.chart_label = QLabel("Run a backtest to see equity curve and charts")
+        self.chart_label.setAlignment(Qt.AlignCenter)
+        self.chart_label.setStyleSheet("color: #888; font-size: 14px;")
+        scroll.setWidget(self.chart_label)
+        layout.addWidget(scroll)
 
         return widget
 
@@ -532,9 +590,10 @@ class MainWindow(QMainWindow):
 
     def _load_settings(self):
         """Load saved settings."""
-        api_key = self.settings.value("databento_api_key", "")
-        if api_key:
-            self.api_key_input.setText(api_key)
+        # Do not load API key automatically for security
+        # api_key = self.settings.value("databento_api_key", "")
+        # if api_key:
+        #     self.api_key_input.setText(api_key)
 
         symbol = self.settings.value("last_symbol", "NDAQ")
         self.symbol_input.setText(symbol)
@@ -544,7 +603,8 @@ class MainWindow(QMainWindow):
 
     def _save_settings(self):
         """Save current settings."""
-        self.settings.setValue("databento_api_key", self.api_key_input.text())
+        # Do not save API key for security
+        # self.settings.setValue("databento_api_key", self.api_key_input.text())
         self.settings.setValue("last_symbol", self.symbol_input.text())
         self.settings.setValue("last_timeframe", self.timeframe_combo.currentText())
 
@@ -556,37 +616,42 @@ class MainWindow(QMainWindow):
     # === Action Methods ===
 
     def _validate_api_key(self):
-        """Validate Databento API key."""
-        from data_providers.databento_provider import DatabentoProvider
-
+        """Validate Databento API key in a worker thread so UI stays responsive."""
         api_key = self.api_key_input.text().strip()
         if not api_key:
             QMessageBox.warning(self, "Error", "Please enter an API key.")
             return
 
         self.validate_btn.setEnabled(False)
-        self.statusbar.showMessage("Validating API key...")
-        QApplication.processEvents()
+        self.statusbar.showMessage("Pinging Databento...")
+        self._validate_key_worker = ValidateKeyWorker(api_key)
+        self._validate_key_worker.result.connect(self._on_validate_key_done)
+        self._validate_key_worker.finished.connect(self._on_validate_key_worker_finished)
+        self._validate_key_worker.start()
 
-        try:
-            provider = DatabentoProvider(api_key)
-            valid, message = provider.validate_api_key()
-            if valid:
-                QMessageBox.information(self, "API Key Valid", message)
-                self.statusbar.showMessage("API key validated successfully.")
-            else:
-                QMessageBox.warning(self, "Invalid API Key", message)
-                self.statusbar.showMessage("API key validation failed.")
-        except Exception as e:
-            err = str(e).strip() or repr(e)
-            QMessageBox.critical(
-                self,
-                "Validation Error",
-                f"Could not validate API key:\n\n{err}",
-            )
-            self.statusbar.showMessage("API key validation error.")
-        finally:
-            self.validate_btn.setEnabled(True)
+    def _on_validate_key_done(self, valid: bool, message: str):
+        """Show validation result in a message box (called from main thread)."""
+        if valid:
+            box = QMessageBox(self)
+            box.setWindowTitle("API Key Valid")
+            box.setIcon(QMessageBox.Information)
+            box.setText(message)
+            box.setStandardButtons(QMessageBox.Ok)
+        else:
+            box = QMessageBox(self)
+            box.setWindowTitle("Invalid API Key")
+            box.setIcon(QMessageBox.Warning)
+            box.setText(message)
+            box.setStandardButtons(QMessageBox.Ok)
+        box.raise_()
+        box.activateWindow()
+        box.exec()
+        self.statusbar.showMessage("Databento responded. API key valid." if valid else "Databento request failed.")
+
+    def _on_validate_key_worker_finished(self):
+        """Re-enable button when worker thread finishes."""
+        self.validate_btn.setEnabled(True)
+        self._validate_key_worker = None
 
     def _fetch_data(self):
         """Fetch data from Databento."""
@@ -602,7 +667,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please enter a symbol")
             return
 
-        self.statusbar.showMessage(f"Fetching {symbol} data...")
+        exchange = self.exchange_combo.currentText()
+        self.statusbar.showMessage(f"Fetching {symbol} data from {exchange}...")
         self.fetch_btn.setEnabled(False)
 
         try:
@@ -619,23 +685,64 @@ class MainWindow(QMainWindow):
                 self.end_date.date().day()
             )
 
+            # Auto-detect exchange for display
+            if exchange == 'AUTO':
+                detected = DatabentoProvider.detect_exchange(symbol)
+                self.statusbar.showMessage(f"Auto-detected {symbol} on {detected}. Fetching...")
+
             df = provider.fetch_ohlcv(
                 symbol=symbol,
                 start_date=start,
                 end_date=end,
                 timeframe=self.timeframe_combo.currentText(),
+                dataset=exchange,
                 rth_only=self.rth_only.isChecked()
             )
 
-            self.current_data = df
-            self.data_status.setText(
-                f"Loaded {len(df)} bars | {df['time'].min()} to {df['time'].max()}"
-            )
-            self.data_status.setStyleSheet("color: #2ecc71;")
-            self.statusbar.showMessage(f"Loaded {len(df)} bars for {symbol}")
+            if df.empty:
+                QMessageBox.warning(self, "No Data",
+                    f"No data returned for {symbol}.\n\n"
+                    f"Tips:\n"
+                    f"- Databento data starts from May 2018\n"
+                    f"- Try a different exchange (NASDAQ vs NYSE/AMEX)\n"
+                    f"- Check the symbol spelling")
+                self.data_status.setText("No data returned")
+                self.data_status.setStyleSheet("color: #e74c3c;")
+            else:
+                self.current_data = df
+                self.data_status.setText(
+                    f"Loaded {len(df)} bars | {df['time'].min()} to {df['time'].max()}"
+                )
+                self.data_status.setStyleSheet("color: #2ecc71;")
+                self.statusbar.showMessage(f"Loaded {len(df)} bars for {symbol}")
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to fetch data: {str(e)}")
+            error_msg = str(e)
+            # Provide helpful hints for common errors
+            if 'data_start_before_available_start' in error_msg:
+                error_msg = (
+                    f"Start date is before data availability.\n\n"
+                    f"Databento XNAS/XNYS data starts from May 2018.\n"
+                    f"Please set a start date of 2018-05-01 or later."
+                )
+            elif 'not found' in error_msg.lower() or 'not_found' in error_msg.lower():
+                error_msg = (
+                    f"Symbol '{symbol}' not found on any exchange.\n\n"
+                    f"Make sure the ticker is correct and available on Databento.\n"
+                    f"Try: AAPL, MSFT, NDAQ (NASDAQ) or SCHD, SPY, JPM (NYSE/AMEX)"
+                )
+            elif 'data_end_after_available_end' in error_msg:
+                error_msg = (
+                    f"End date is beyond Databento's available data.\n\n"
+                    f"This usually means data for today isn't available yet.\n"
+                    f"Try setting an earlier end date."
+                )
+            elif 'auth' in error_msg.lower() or '401' in error_msg:
+                error_msg = (
+                    f"API key authentication failed.\n\n"
+                    f"Please check your Databento API key is valid and has remaining credits."
+                )
+            QMessageBox.critical(self, "Error", f"Failed to fetch data: {error_msg}")
             self.statusbar.showMessage("Data fetch failed")
 
         finally:
@@ -727,6 +834,7 @@ class MainWindow(QMainWindow):
         self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_backtest_complete)
         self.worker.error.connect(self._on_backtest_error)
+        self.worker.settings_parsed.connect(self._on_settings_parsed)
         self.worker.start()
 
     def _on_progress(self, value, message):
@@ -746,6 +854,9 @@ class MainWindow(QMainWindow):
         # Update trades table
         self._update_trades_table(result)
 
+        # Render charts
+        self._render_charts(result)
+
         # Show summary tab
         self.results_tabs.setCurrentIndex(0)
 
@@ -761,6 +872,79 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         QMessageBox.critical(self, "Backtest Error", error)
         self.statusbar.showMessage("Backtest failed")
+
+    def _render_charts(self, result):
+        """Render equity curve and drawdown charts using Agg backend."""
+        if result.equity_curve is None or len(result.equity_curve) == 0:
+            self.chart_label.setText("No data to chart")
+            return
+
+        try:
+            import matplotlib
+            if matplotlib.get_backend().lower() != 'agg':
+                matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            import io
+
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 7), facecolor='#1e1e1e')
+
+            for ax in [ax1, ax2]:
+                ax.set_facecolor('#1e1e1e')
+                ax.tick_params(colors='#cccccc')
+                ax.xaxis.label.set_color('#cccccc')
+                ax.yaxis.label.set_color('#cccccc')
+                ax.title.set_color('#cccccc')
+                for spine in ax.spines.values():
+                    spine.set_color('#444444')
+
+            x = range(len(result.equity_curve))
+
+            # Equity curve
+            eq = result.equity_curve
+            ax1.plot(x, eq, color='#2ecc71', linewidth=1)
+            ax1.set_ylabel('Equity ($)', color='#cccccc')
+            ax1.set_title('Equity Curve', color='#cccccc')
+            ax1.grid(True, alpha=0.2, color='#444444')
+            initial = eq[0]
+            ax1.fill_between(x, eq, initial,
+                             where=[e >= initial for e in eq],
+                             alpha=0.1, color='#2ecc71')
+            ax1.fill_between(x, eq, initial,
+                             where=[e < initial for e in eq],
+                             alpha=0.1, color='#e74c3c')
+
+            # Drawdown
+            dd = result.drawdown_curve
+            ax2.fill_between(x, dd, 0, color='#e74c3c', alpha=0.3)
+            ax2.plot(x, dd, color='#e74c3c', linewidth=1)
+            ax2.set_ylabel('Drawdown ($)', color='#cccccc')
+            ax2.set_xlabel('Bar', color='#cccccc')
+            ax2.set_title('Drawdown', color='#cccccc')
+            ax2.grid(True, alpha=0.2, color='#444444')
+
+            fig.tight_layout()
+
+            # Render to QPixmap
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=120, facecolor='#1e1e1e')
+            plt.close(fig)
+            buf.seek(0)
+
+            from PySide6.QtGui import QPixmap
+            pixmap = QPixmap()
+            pixmap.loadFromData(buf.getvalue())
+            self.chart_label.setPixmap(pixmap)
+            self.chart_label.setAlignment(Qt.AlignCenter)
+
+        except Exception as e:
+            self.chart_label.setText(f"Chart rendering failed: {str(e)}")
+
+    def _on_settings_parsed(self, settings):
+        """Update GUI fields when strategy settings are parsed from PineScript."""
+        self.capital_input.setValue(settings.initial_capital)
+        self.commission_input.setValue(settings.commission_value)
+        if settings.default_qty_type == "percent_of_equity":
+            self.order_size_input.setValue(settings.default_qty_value)
 
     def _update_metrics(self, result):
         """Update metrics display."""
