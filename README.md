@@ -13,7 +13,7 @@ A local backtesting platform that translates PineScript strategies into Python c
 
 ![Web Backtester](docs/screenshots/web_dashboard.png)
 
-The dashboard you get when you run the web app or click **Open Dashboard** from the launcher. One page, dark theme, no clutter: pick your data source and symbol in the left sidebar, choose a strategy (or paste PineScript and hit Translate), tweak commission and validation settings, then run the backtest. The right panel shows Summary (like in the shot above—trades, profit factor, win rate, drawdown), plus Trades, Charts, and Validation tabs. Everything stays local at `127.0.0.1:5000`.
+The dashboard you get when you run the web app or click **Open Dashboard** from the launcher. Pick your data source and symbol in the left sidebar, choose a strategy (or paste PineScript and hit Translate), tweak commission and validation settings, then run the backtest. The right panel shows Summary (like in the shot above—trades, profit factor, win rate, drawdown), plus Trades, Charts, and Validation tabs. Everything stays local at `127.0.0.1:5000`.
 
 ### Standalone Engine (Windows EXE)
 
