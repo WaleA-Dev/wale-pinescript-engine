@@ -17,7 +17,7 @@ The dashboard you get when you run the web app or click **Open Dashboard** from 
 
 ### Standalone Engine (Windows EXE)
 
-![Wale Backtest Engine Launcher](docs/screenshots/engine_launcher.png)
+![Wale Backtest Engine Launcher](docs/screenshots/exe engine.png)
 
 Double-click **WaleBacktest.exe** and you get this launcher: it starts the Flask server on port 5000 and gives you a single **Open Dashboard** button to jump straight into the web backtester. No Python or terminal required. When you're done, **Stop & Quit** shuts the server and closes the app. Same engine under the hood whether you run from the EXE or from `python web_app.py`.
 
