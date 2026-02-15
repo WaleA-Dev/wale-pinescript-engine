@@ -11,15 +11,15 @@ A local backtesting platform that translates PineScript strategies into Python c
 
 ### Web Backtester (Flask)
 
-![Web Dashboard](docs/screenshots/web_dashboard.png)
+![Web Backtester](docs/screenshots/web_dashboard.png)
 
-Dark-themed single-page app running at `127.0.0.1:5000`. Left sidebar handles data loading, strategy selection, Pine/Python editors, and settings. Right panel shows Summary, Trades, Charts, and Validation tabs.
+The dashboard you get when you run the web app or click **Open Dashboard** from the launcher. Pick your data source and symbol in the left sidebar, choose a strategy (or paste PineScript and hit Translate), tweak commission and validation settings, then run the backtest. The right panel shows Summary (like in the shot above—trades, profit factor, win rate, drawdown), plus Trades, Charts, and Validation tabs. Everything stays local at `127.0.0.1:5000`.
 
-### Desktop GUI (PySide6)
+### Standalone Engine (Windows EXE)
 
-![Desktop GUI](docs/screenshots/desktop_gui.png)
+![Wale Backtest Engine Launcher](docs/screenshots/engine_launcher.png)
 
-Standalone desktop application with Databento integration and the same backtesting engine under the hood.
+Double-click **WaleBacktest.exe** and you get this launcher: it starts the Flask server on port 5000 and gives you a single **Open Dashboard** button to jump straight into the web backtester. No Python or terminal required. When you’re done, **Stop & Quit** shuts the server and closes the app. Same engine under the hood whether you run from the EXE or from `python web_app.py`.
 
 ---
 
@@ -55,7 +55,8 @@ python app.py
 ```bash
 pip install pyinstaller
 pyinstaller PineScriptBacktester.spec
-./dist/PineScriptBacktester.exe
+# Run the launcher from dist (e.g. WaleBacktest.exe or PineScriptBacktester.exe)
+./dist/WaleBacktest.exe
 ```
 
 ---
