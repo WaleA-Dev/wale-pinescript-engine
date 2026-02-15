@@ -9,17 +9,9 @@ A local backtesting platform that translates PineScript strategies into Python c
 
 ## Screenshots
 
-### Web Backtester (Flask)
-
 ![Web Backtester](docs/screenshots/web_dashboard.png)
 
-The dashboard you get when you run the web app or click **Open Dashboard** from the launcher. Pick your data source and symbol in the left sidebar, choose a strategy (or paste PineScript and hit Translate), tweak commission and validation settings, then run the backtest. The right panel shows Summary (like in the shot above—trades, profit factor, win rate, drawdown), plus Trades, Charts, and Validation tabs. Everything stays local at `127.0.0.1:5000`.
-
-### Standalone Engine (Windows EXE)
-
-![Wale Backtest Engine Launcher](docs/screenshots/engine_launcher.png)
-
-Double-click **WaleBacktest.exe** and you get this launcher: it starts the Flask server on port 5000 and gives you a single **Open Dashboard** button to jump straight into the web backtester. No Python or terminal required. When you’re done, **Stop & Quit** shuts the server and closes the app. Same engine under the hood whether you run from the EXE or from `python web_app.py`.
+The dashboard you get when you run `python web_app.py` or click **Open Dashboard** from **WaleBacktest.exe**. Pick your data source and symbol in the left sidebar, choose a strategy (or paste PineScript and hit Translate), tweak commission and validation settings, then run the backtest. The right panel shows Summary (trades, profit factor, win rate, drawdown), plus Trades, Charts, and Validation tabs. Everything stays local at `127.0.0.1:5000`. The EXE is just a launcher: it starts the Flask server and opens this same page—no Python or terminal required.
 
 ---
 
@@ -45,17 +37,14 @@ pip install -r requirements.txt
 # Launch the web app
 python web_app.py
 # Opens http://127.0.0.1:5000 in your browser
-
-# Or launch the desktop GUI
-python app.py
 ```
 
 ### Build Standalone EXE
 
 ```bash
 pip install pyinstaller
-pyinstaller PineScriptBacktester.spec
-# Run the launcher from dist (e.g. WaleBacktest.exe or PineScriptBacktester.exe)
+pyinstaller WaleBacktest.spec
+# Run the launcher from dist
 ./dist/WaleBacktest.exe
 ```
 
@@ -152,7 +141,7 @@ Not supported yet: `ta.adx`, `ta.stoch`, `ta.bb`, `request.*`, `array.*`, ternar
 ```
 wale-pinescript-engine/
   web_app.py                  Flask backend (web UI entry point)
-  app.py                      Desktop GUI entry point
+  launcher.py                 Tk launcher for EXE (starts server + Open Dashboard)
   backtest_engine.py          CLI entry point
   templates/
     converge.html             Web UI (single-page dashboard)
@@ -182,10 +171,6 @@ wale-pinescript-engine/
     uploads/                  CSV uploads
   docs/
     screenshots/
-  gui/
-    main_window.py            PySide6 desktop application
-  data_providers/
-    databento_provider.py     Databento API integration
 ```
 
 ---
@@ -270,8 +255,6 @@ Any CSV with `open`, `high`, `low`, `close` columns. The first column should be 
 - Dependencies: Flask, pandas, numpy, scipy, matplotlib
 
 Optional:
-- PySide6 (for desktop GUI)
-- Databento API key (for live data in desktop app)
 - duka-dl (for Dukascopy forex data)
 
 ---
