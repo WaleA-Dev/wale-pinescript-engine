@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pine to Python Translator</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; background:#f5f7fb; color:#1f2937; }
+    textarea { width: 100%; min-height: 280px; font-family: Consolas, monospace; font-size: 13px; }
+    button { padding: 10px 16px; background:#1d4ed8; color:white; border:none; border-radius:6px; cursor:pointer; }
+    button:hover { background:#1e40af; }
+    pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:6px; overflow:auto; }
+    .panel { background:white; border-radius:10px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.08); }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Paste Any PineScript Strategy</h1>
+    <form id="translateForm">
+      <textarea name="pine_code" placeholder="Paste PineScript code here..."></textarea>
+      <p><button type="submit">Translate</button></p>
+    </form>
+    <div id="result"></div>
+  </div>
+
+  <script>
+    document.getElementById('translateForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const resp = await fetch('/translate', { method: 'POST', body: fd });
+      const result = await resp.json();
+      const root = document.getElementById('result');
+      if (result.success) {
+        root.innerHTML = `<h2>Translation Successful</h2><pre>${(result.python_code || '').replaceAll('<','&lt;')}</pre>`;
+      } else {
+        const issues = (result.issues || []).map(i => `<li>${i}</li>`).join('');
+        root.innerHTML = `<h2>Translation Failed</h2><ul>${issues}</ul>`;
+      }
+    };
+  </script>
+</body>
+</html>
