@@ -1,7 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
+"""
+PyInstaller spec for the PineScriptBacktester desktop app (PySide6 GUI).
+
+Paths are relative so the build works from any checkout:
+
+    pyinstaller PineScriptBacktester.spec
+"""
+
+import os
+
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('C:\\Users\\wale\\wale-pinescript-engine\\src', 'src'), ('C:\\Users\\wale\\wale-pinescript-engine\\data_providers', 'data_providers'), ('C:\\Users\\wale\\wale-pinescript-engine\\gui', 'gui')]
+ROOT = os.path.abspath(os.getcwd())
+
+datas = [
+    (os.path.join(ROOT, 'src'), 'src'),
+    (os.path.join(ROOT, 'data_providers'), 'data_providers'),
+    (os.path.join(ROOT, 'gui'), 'gui'),
+]
 binaries = []
 hiddenimports = ['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets', 'numpy', 'pandas', 'pandas._libs.tslibs.timezones', 'dateutil.tz', 'scipy', 'matplotlib', 'matplotlib.backends.backend_agg']
 tmp_ret = collect_all('databento')
@@ -9,14 +25,14 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['C:\\Users\\wale\\wale-pinescript-engine\\app.py'],
-    pathex=[],
+    [os.path.join(ROOT, 'app.py')],
+    pathex=[ROOT],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=['C:\\Users\\wale\\wale-pinescript-engine\\hooks\\pyi_rth_pyside6_patch.py'],
+    runtime_hooks=[os.path.join(ROOT, 'hooks', 'pyi_rth_pyside6_patch.py')],
     excludes=[],
     noarchive=False,
     optimize=0,

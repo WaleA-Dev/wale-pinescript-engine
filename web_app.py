@@ -82,6 +82,9 @@ def serve_plot(filename):
 
 @app.route("/api/strategies", methods=["GET"])
 def api_strategies():
+    from src.strategies import discover_strategies
+    discover_strategies()
+
     seen = set()
     strategies = []
     for name, cls in sorted(STRATEGY_REGISTRY.items()):
@@ -545,4 +548,12 @@ if __name__ == "__main__":
 
     # Auto-open browser (especially useful when running as .exe)
     threading.Timer(1.5, lambda: webbrowser.open(url)).start()
-    app.run(host="127.0.0.1", port=port, debug=not getattr(sys, "frozen", False))
+    # use_reloader=False: translating a strategy writes a .py file into
+    # src/strategies/, which would trigger the debug reloader and wipe
+    # loaded data (in-memory state) mid-session.
+    app.run(
+        host="127.0.0.1",
+        port=port,
+        debug=not getattr(sys, "frozen", False),
+        use_reloader=False,
+    )

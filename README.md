@@ -47,13 +47,26 @@ python web_app.py
 # Opens http://127.0.0.1:5000 in your browser
 ```
 
-### Build Standalone EXE
+There is also a CLI for one-shot runs against a Pine file:
+
+```bash
+python backtest_engine.py --csv your_data.csv --pine examples/saty_phase_strategy.pine --run_step1 true
+```
+
+### Build Standalone EXE (Windows)
+
+Two build targets:
 
 ```bash
 pip install pyinstaller
+
+# Web launcher: Tk window + embedded Flask server + Open Dashboard button
 pyinstaller WaleBacktest.spec
-# Run the launcher from dist
 ./dist/WaleBacktest.exe
+
+# Desktop GUI app (PySide6, Databento integration)
+pyinstaller PineScriptBacktester.spec
+./dist/PineScriptBacktester.exe
 ```
 
 ---
@@ -70,7 +83,7 @@ Pick a source from the sidebar:
 
 ### 2. Pick or Write a Strategy
 
-The engine ships with 12 built-in strategies (Donchian, EMA Cross, MACD, RSI, NDX Trader, etc). Select one from the dropdown.
+The engine ships with 11 built-in strategies (Donchian, EMA Cross, MACD, RSI, NDX Trader, Saty Phase, etc). All `.py` files in `src/strategies/` are auto-discovered and appear in the dropdown — including strategies you translate or write yourself.
 
 Or write your own:
 
@@ -150,10 +163,19 @@ Not supported yet: `ta.adx`, `ta.stoch`, `ta.bb`, `request.*`, `array.*`, ternar
 wale-pinescript-engine/
   web_app.py                  Flask backend (web UI entry point)
   launcher.py                 Tk launcher for EXE (starts server + Open Dashboard)
-  backtest_engine.py          CLI entry point
+  app.py                      PySide6 desktop GUI (Databento integration)
+  backtest_engine.py          CLI entry point (--csv + --pine)
+  WaleBacktest.spec           PyInstaller spec for the web launcher EXE
+  PineScriptBacktester.spec   PyInstaller spec for the desktop GUI EXE
   templates/
     converge.html             Web UI (single-page dashboard)
+  examples/
+    saty_phase_strategy.pine  Example Pine strategies
+    new.pine
   src/
+    parser.py                 PineScript parameter/pattern extraction
+    backtest.py               Trade-by-trade engine (TV execution model)
+    validator.py              TradingView export comparison + diagnostics
     bar_returns.py            Bar-level return computation with next-bar-open fills
     data_loader.py            Yahoo, Dukascopy, CSV loading
     optimization.py           Grid search
@@ -163,7 +185,7 @@ wale-pinescript-engine/
       donchian.py             Donchian breakout
       ema_crossover.py        EMA crossover
       ndx_trader.py           NDX trend + RSI pullback
-      ...                     12 strategies total
+      ...                     11 strategies total, auto-discovered
     pine_translator/
       parser.py               PineScript AST extraction
       translator.py           Pine to Python code generation
@@ -260,10 +282,12 @@ Any CSV with `open`, `high`, `low`, `close` columns. The first column should be 
 
 - Python 3.10+
 - Windows 10/11 (for EXE builds)
-- Dependencies: Flask, pandas, numpy, scipy, matplotlib
+- Dependencies: Flask, pandas, numpy, scipy, matplotlib, yfinance (all in `requirements.txt`)
 
 Optional:
 - duka-dl (for Dukascopy forex data)
+- PySide6 + databento (for the desktop GUI, `app.py`)
+- pyinstaller (for EXE builds)
 
 ---
 
