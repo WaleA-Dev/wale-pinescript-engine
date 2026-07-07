@@ -1,17 +1,16 @@
-"""Universal Pine translation package."""
+"""Universal Pine translation package (lexer/parser/transpiler)."""
 
-from .parser import PineCondition, PineIndicator, PineInput, PineParser, PineStrategy
+from .parser import ParsedScript, PineInput, PineParser, parse_expression
 from .pipeline import TranslationPipeline
 from .translator import PineTranslator
 from .validator import TranslationValidator
 
 __all__ = [
-    "PineCondition",
-    "PineIndicator",
+    "ParsedScript",
     "PineInput",
     "PineParser",
-    "PineStrategy",
     "PineTranslator",
     "TranslationValidator",
     "TranslationPipeline",
+    "parse_expression",
 ]

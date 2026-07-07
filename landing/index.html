@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wale Backtest Engine — Paste Pine. Get proof.</title>
+<meta name="description" content="Free Windows desktop app that translates TradingView Pine Script to Python, replays it on live market data with TradingView-accurate fills, and stress-tests the result with permutation statistics.">
+<meta property="og:title" content="Wale Backtest Engine">
+<meta property="og:description" content="Paste Pine. Get proof. Translate TradingView strategies to Python and backtest them with TradingView-accurate execution on free live data.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://wale-backtest.vercel.app/">
+<meta property="og:image" content="https://wale-backtest.vercel.app/dashboard.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Wale Backtest Engine — Paste Pine. Get proof.">
+<meta name="twitter:description" content="Translate TradingView Pine Script to Python and backtest with TradingView-accurate fills, then stress-test with permutation statistics. Free Windows app.">
+<meta name="twitter:image" content="https://wale-backtest.vercel.app/dashboard.png">
+<link rel="canonical" href="https://wale-backtest.vercel.app/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230A0E12'/%3E%3Crect x='6' y='6' width='52' height='52' rx='10' fill='%2316a34a'/%3E%3Ctext x='32' y='44' font-family='Arial Black,Arial' font-size='34' font-weight='900' fill='white' text-anchor='middle'%3EW%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0A0E12;
+  --panel:#10161C;
+  --panel-2:#0D1319;
+  --line:#1E2830;
+  --paper:#E8EDF2;
+  --dim:#8A99A8;
+  --faint:#54626F;
+  --bid:#2FD57C;
+  --bid-dark:#17A45C;
+  --ask:#FF5C5C;
+  --amber:#FFB454;
+  --mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+  --sans:'Archivo',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--paper);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+::selection{background:var(--bid);color:var(--ink)}
+a{color:inherit}
+a:focus-visible,button:focus-visible{outline:2px solid var(--bid);outline-offset:3px;border-radius:2px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+
+/* ── nav ── */
+nav{position:sticky;top:0;z-index:50;background:rgba(10,14,18,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:58px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none}
+.badge{width:26px;height:26px;border-radius:6px;background:var(--bid-dark);border:1px solid var(--bid);display:grid;place-items:center;font-family:var(--sans);font-weight:900;font-size:15px;color:#fff}
+.brand span{font-family:var(--mono);font-weight:600;font-size:13px;letter-spacing:.14em}
+.nav-links{display:flex;gap:22px;align-items:center;font-family:var(--mono);font-size:12.5px}
+.nav-links a{color:var(--dim);text-decoration:none;transition:color .15s}
+.nav-links a:hover{color:var(--paper)}
+.nav-cta{color:var(--ink)!important;background:var(--bid);padding:7px 14px;border-radius:6px;font-weight:600}
+.nav-cta:hover{background:#4ae294;color:var(--ink)!important}
+
+/* ── hero ── */
+.hero{padding:84px 0 30px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;color:var(--bid);margin-bottom:22px}
+.eyebrow .sep{color:var(--faint);margin:0 8px}
+h1{font-family:var(--sans);font-stretch:118%;font-weight:880;font-size:clamp(44px,7.4vw,84px);line-height:.98;letter-spacing:-.015em;text-transform:uppercase}
+h1 .proof{color:var(--bid)}
+.sub{max-width:600px;margin:26px 0 34px;color:var(--dim);font-size:17.5px;line-height:1.65}
+.sub strong{color:var(--paper);font-weight:600}
+.cta-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;padding:15px 26px;transition:transform .12s,background .15s;cursor:pointer}
+.btn:active{transform:translateY(1px)}
+.btn-buy{background:var(--bid);color:var(--ink)}
+.btn-buy:hover{background:#4ae294}
+.btn-ghost{border:1px solid var(--line);color:var(--dim)}
+.btn-ghost:hover{border-color:var(--faint);color:var(--paper)}
+.meta-line{font-family:var(--mono);font-size:12px;color:var(--faint);margin-top:14px}
+.meta-line b{color:var(--dim);font-weight:500}
+
+/* ── translation panel (signature) ── */
+.demo{margin:64px 0 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel-2)}
+.demo-head{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.08em}
+.demo-head .dots{display:flex;gap:6px}
+.demo-head .dots i{width:9px;height:9px;border-radius:50%;background:var(--line);display:block}
+.demo-body{display:grid;grid-template-columns:1fr 1.15fr}
+.pane{padding:20px 22px;min-width:0}
+.pane-l{border-right:1px solid var(--line)}
+.pane-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;color:var(--faint);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.pane-label .dot{width:6px;height:6px;border-radius:50%;background:var(--amber)}
+.pane-r .pane-label .dot{background:var(--bid)}
+pre{font-family:var(--mono);font-size:12.5px;line-height:1.75;overflow-x:auto;color:var(--dim)}
+pre .k{color:var(--amber)}
+pre .f{color:#6CB6FF}
+pre .s{color:var(--bid)}
+pre .n{color:var(--paper)}
+pre .c{color:var(--faint)}
+.tape{font-family:var(--mono);font-size:12px;line-height:2.05;white-space:nowrap;overflow-x:auto}
+.tr-row{display:flex;gap:14px;opacity:0;animation:rowin .3s forwards}
+.tr-row .id{color:var(--faint);width:38px}
+.tr-row .side{color:var(--bid);width:42px}
+.tr-row .dt{color:var(--dim);width:118px}
+.tr-row .px{color:var(--paper);width:130px}
+.tr-row .pnl{width:64px;text-align:right}
+.tr-row .why{color:var(--faint)}
+.up{color:var(--bid)}.dn{color:var(--ask)}
+@keyframes rowin{to{opacity:1}}
+.eq-wrap{border-top:1px solid var(--line);padding:16px 22px 20px;background:var(--panel)}
+.eq-cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--faint);margin-bottom:8px}
+.eq-cap b{color:var(--dim);font-weight:500}
+svg.eq{width:100%;height:64px;display:block}
+
+/* ── ticker strip ── */
+.ticker{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:84px;overflow:hidden;background:var(--panel-2)}
+.ticker-in{display:flex;gap:0;width:max-content;animation:tick 38s linear infinite;padding:13px 0}
+.ticker:hover .ticker-in{animation-play-state:paused}
+.tk{font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:var(--dim);padding:0 34px;border-right:1px solid var(--line);white-space:nowrap}
+.tk b{color:var(--bid);font-weight:600}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ── sections ── */
+section{padding:96px 0 0}
+.sec-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--faint);margin-bottom:14px}
+h2{font-family:var(--sans);font-stretch:114%;font-weight:820;font-size:clamp(28px,4vw,44px);line-height:1.05;letter-spacing:-.01em;text-transform:uppercase;max-width:640px}
+.sec-sub{color:var(--dim);max-width:560px;margin-top:16px}
+
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:44px}
+.step{background:var(--panel-2);padding:28px 26px}
+.step .no{font-family:var(--mono);font-size:11px;color:var(--bid);letter-spacing:.18em;margin-bottom:16px}
+.step h3{font-family:var(--sans);font-weight:700;font-size:18px;margin-bottom:10px}
+.step p{color:var(--dim);font-size:14.5px}
+.step code{font-family:var(--mono);font-size:12.5px;color:var(--amber);background:rgba(255,180,84,.07);padding:1px 5px;border-radius:4px}
+
+/* screenshot */
+.shot{margin-top:48px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel-2)}
+.shot img{width:100%;display:block}
+
+/* execution table */
+.exec-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13px;margin-top:40px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.exec-table th{background:var(--panel);text-align:left;padding:13px 18px;color:var(--faint);font-weight:500;font-size:11px;letter-spacing:.16em;border-bottom:1px solid var(--line)}
+.exec-table td{padding:13px 18px;border-bottom:1px solid var(--line);color:var(--dim);background:var(--panel-2)}
+.exec-table tr:last-child td{border-bottom:none}
+.exec-table td:first-child{color:var(--paper)}
+.exec-table td b{color:var(--bid);font-weight:500}
+.foot-note{font-family:var(--mono);font-size:12px;color:var(--faint);margin-top:14px;line-height:1.8}
+
+/* two-col facts */
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:44px}
+.fact{background:var(--panel-2);padding:26px}
+.fact h3{font-family:var(--mono);font-size:12.5px;font-weight:600;letter-spacing:.1em;color:var(--paper);margin-bottom:10px;display:flex;gap:10px;align-items:center}
+.fact h3 .tick{color:var(--bid)}
+.fact p{color:var(--dim);font-size:14px}
+
+/* download */
+.dl{margin-top:96px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--panel) 0%,var(--panel-2) 100%);padding:56px 48px;text-align:center}
+.dl h2{margin:0 auto 12px;max-width:none}
+.dl .sec-sub{margin:0 auto 34px}
+.dl-meta{display:flex;gap:26px;justify-content:center;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--faint);margin-top:22px}
+.dl-meta span b{color:var(--dim);font-weight:500}
+.smart{max-width:560px;margin:34px auto 0;text-align:left;border:1px solid var(--line);border-radius:10px;padding:18px 22px;background:var(--ink)}
+.smart h4{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;color:var(--amber);margin-bottom:10px}
+.smart ol{margin-left:18px;color:var(--dim);font-size:13.5px}
+.smart li{margin:4px 0}
+
+/* footer */
+footer{margin-top:110px;border-top:1px solid var(--line);padding:34px 0 44px}
+.foot-in{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;font-family:var(--mono);font-size:12px;color:var(--faint)}
+.foot-in a{color:var(--dim);text-decoration:none}
+.foot-in a:hover{color:var(--paper)}
+
+@media (max-width:840px){
+  .demo-body{grid-template-columns:1fr}
+  .pane-l{border-right:none;border-bottom:1px solid var(--line)}
+  .steps{grid-template-columns:1fr}
+  .facts{grid-template-columns:1fr}
+  .dl{padding:40px 22px}
+  .nav-links a.hide-m{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .ticker-in{animation:none}
+  .tr-row{animation:none;opacity:1}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="brand" href="#"><span class="badge">W</span><span>WALE&nbsp;BACKTEST</span></a>
+    <div class="nav-links">
+      <a href="#how" class="hide-m">how it works</a>
+      <a href="#execution" class="hide-m">execution</a>
+      <a href="https://github.com/WaleA-Dev/wale-pinescript-engine" target="_blank" rel="noopener">source</a>
+      <a class="nav-cta" href="https://github.com/WaleA-Dev/wale-pinescript-engine/releases/download/v2.2.0/WaleBacktest.exe">Download</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <div class="eyebrow">FOR PINE SCRIPT AUTHORS<span class="sep">//</span>WINDOWS DESKTOP<span class="sep">//</span>FREE</div>
+  <h1>Paste Pine.<br><span class="proof">Get proof.</span></h1>
+  <p class="sub"><strong>Wale Backtest Engine</strong> translates your TradingView strategy to Python, replays it on live market data with TradingView-accurate fills, and stress-tests the result with permutation statistics — <strong>before you risk a dollar</strong>.</p>
+  <div class="cta-row">
+    <a class="btn btn-buy" href="https://github.com/WaleA-Dev/wale-pinescript-engine/releases/download/v2.2.0/WaleBacktest.exe">&#8681;&nbsp; Download for Windows</a>
+    <a class="btn btn-ghost" href="https://github.com/WaleA-Dev/wale-pinescript-engine" target="_blank" rel="noopener">View source &#8599;</a>
+  </div>
+  <div class="meta-line">v2.2.0 &nbsp;·&nbsp; <b>Windows 10/11 x64</b> &nbsp;·&nbsp; 174 MB &nbsp;·&nbsp; no Python required &nbsp;·&nbsp; your API keys never leave your machine</div>
+
+  <!-- SIGNATURE: real Pine compiling into the real trade tape -->
+  <div class="demo" aria-label="Example: Pine Script strategy translated into executed trades">
+    <div class="demo-head">
+      <span>TRANSLATION&nbsp;&nbsp;·&nbsp;&nbsp;smart_trend_momentum_v6 &nbsp;→&nbsp; NDAQ 1H, 19,416 bars</span>
+      <span class="dots"><i></i><i></i><i></i></span>
+    </div>
+    <div class="demo-body">
+      <div class="pane pane-l">
+        <div class="pane-label"><span class="dot"></span>STRATEGY.PINE — INPUT</div>
+<pre><span class="c">// ===== Entry Conditions =====</span>
+<span class="n">longCond</span> =
+    <span class="n">upTrend</span> <span class="k">and</span>
+    <span class="n">rsiVal</span> &gt; <span class="n">rsiMin</span> <span class="k">and</span>
+    <span class="n">rsiVal</span> &lt; <span class="n">rsiMax</span> <span class="k">and</span>
+    <span class="f">strategy.position_size</span> == 0
+
+<span class="k">if</span> <span class="n">longCond</span>
+    <span class="f">strategy.entry</span>(<span class="s">"Long"</span>, <span class="f">strategy.long</span>)
+
+<span class="c">// ===== Exits =====</span>
+<span class="k">if</span> <span class="f">strategy.position_size</span> &gt; 0
+    <span class="n">longStop</span> = <span class="f">strategy.position_avg_price</span> - <span class="n">atrVal</span> * <span class="n">slMult</span>
+    <span class="n">longTake</span> = <span class="f">strategy.position_avg_price</span> + <span class="n">atrVal</span> * <span class="n">tpMult</span>
+    <span class="f">strategy.exit</span>(<span class="s">"Long Exit"</span>, stop=<span class="n">longStop</span>, limit=<span class="n">longTake</span>)</pre>
+      </div>
+      <div class="pane pane-r">
+        <div class="pane-label"><span class="dot"></span>TRADES — OUTPUT (REAL RUN)</div>
+        <div class="tape" id="tape"></div>
+      </div>
+    </div>
+    <div class="eq-wrap">
+      <div class="eq-cap"><span><b>EQUITY REPLAY</b> — 985 TRADES, EVERY EXIT AT ITS STOP OR LIMIT PRICE</span><span>2019 — 2026</span></div>
+      <svg class="eq" viewBox="0 0 600 42" preserveAspectRatio="none" role="img" aria-label="Equity curve of the replayed strategy">
+        <polyline fill="none" stroke="#2FD57C" stroke-width="1.4" opacity=".9"
+          points="0.0,26.67 4.3,23.6 8.6,22.8 12.9,19.95 17.1,15.47 21.4,15.29 25.7,19.3 30.0,16.31 34.3,13.05 38.6,15.63 42.9,13.69 47.1,18.95 51.4,21.13 55.7,23.56 60.0,22.95 64.3,22.96 68.6,22.11 72.9,24.93 77.1,32.66 81.4,22.74 85.7,17.34 90.0,18.66 94.3,21.2 98.6,18.77 102.9,7.98 107.1,11.98 111.4,13.29 115.7,17.29 120.0,14.45 124.3,18.08 128.6,16.59 132.9,19.34 137.1,11.65 141.4,22.06 145.7,20.89 150.0,25.06 154.3,17.95 158.6,13.57 162.9,17.4 167.1,7.43 171.4,7.83 175.7,7.78 180.0,6.45 184.3,5.75 188.6,4.0 192.9,5.43 197.1,5.42 201.4,12.13 205.7,10.78 210.0,19.4 214.3,24.93 218.6,23.11 222.9,23.11 227.1,21.91 231.4,27.62 235.7,27.75 240.0,23.86 244.3,22.91 248.6,22.91 252.9,24.11 257.1,23.78 261.4,28.16 265.7,26.01 270.0,21.33 274.3,14.98 278.6,17.65 282.9,14.44 287.1,18.05 291.4,19.84 295.7,23.66 300.0,23.12 304.3,23.4 308.6,23.7 312.9,22.36 317.1,24.73 321.4,25.84 325.7,25.84 330.0,23.79 334.3,22.02 338.6,24.02 342.9,26.11 347.1,25.43 351.4,25.43 355.7,25.04 360.0,28.37 364.3,29.17 368.6,28.04 372.9,28.99 377.1,28.47 381.4,30.68 385.7,28.97 390.0,27.29 394.3,29.09 398.6,27.15 402.9,27.58 407.1,31.66 411.4,35.03 415.7,30.75 420.0,28.66 424.3,31.37 428.6,33.24 432.9,33.27 437.1,34.19 441.4,34.41 445.7,31.48 450.0,33.04 454.3,34.12 458.6,31.01 462.9,29.5 467.1,30.33 471.4,33.25 475.7,38.0 480.0,32.93 484.3,30.56 488.6,32.02 492.9,33.79 497.1,32.37 501.4,34.13 505.7,30.35 510.0,33.09 514.3,32.47 518.6,34.36 522.9,36.25 527.1,31.39 531.4,31.4 535.7,26.86 540.0,26.92 544.3,26.38 548.6,25.56 552.9,22.54 557.1,24.04 561.4,23.15 565.7,24.69 570.0,24.53 574.3,31.36 578.6,31.36 582.9,31.06 587.1,31.63 591.4,26.71 595.7,27.68 600.0,31.78"/>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<!-- receipts ticker -->
+<div class="ticker" aria-hidden="true">
+  <div class="ticker-in" id="tickerIn">
+    <span class="tk"><b>985</b> TRADES REPLAYED BAR-BY-BAR</span>
+    <span class="tk"><b>106/106</b> TESTS PASS</span>
+    <span class="tk">VERIFIED AGAINST THE <b>OFFICIAL PINE REFERENCE</b></span>
+    <span class="tk"><b>LIVE</b> DATA — FREE ALPACA IEX FEED</span>
+    <span class="tk">FILLS AT <b>NEXT BAR OPEN</b>, STOPS <b>INTRABAR</b></span>
+    <span class="tk">SPLIT-ADJUSTED OHLCV, <b>1MIN — 1D</b></span>
+    <span class="tk">KEYS STORED <b>LOCALLY</b>, NEVER BUNDLED</span>
+  </div>
+</div>
+
+<section id="how" class="wrap">
+  <div class="sec-eyebrow">HOW IT RUNS</div>
+  <h2>From script to verdict in three moves</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="no">01 / TRANSLATE</div>
+      <h3>Paste your Pine</h3>
+      <p>A real parser — not regex — compiles <code>ta.*</code> math to vectorized numpy and your stateful logic (<code>var</code>, <code>:=</code>, if-blocks, <code>strategy.exit</code> brackets) into an event-driven bar loop. Anything it can't honor is flagged, never silently dropped.</p>
+    </div>
+    <div class="step">
+      <div class="no">02 / REPLAY</div>
+      <h3>Fetch live data, run it</h3>
+      <p>Pull split-adjusted bars from Alpaca's free IEX feed — any US stock or ETF, 1-minute to daily — and replay your strategy through a broker emulator that follows TradingView's documented fill rules.</p>
+    </div>
+    <div class="step">
+      <div class="no">03 / INTERROGATE</div>
+      <h3>Demand statistical proof</h3>
+      <p>Grid-search parameters in-sample, then attack the result: Monte-Carlo permutation p-values, walk-forward out-of-sample, and a final verdict — <code>VALIDATED</code>, <code>OVERFIT</code>, or <code>POOR</code>.</p>
+    </div>
+  </div>
+  <div class="shot"><img src="dashboard.png" alt="Wale Backtest Engine: pipeline ticket with armed strategy, metric cards, and detailed backtest results" loading="lazy"></div>
+</section>
+
+<section id="execution" class="wrap">
+  <div class="sec-eyebrow">EXECUTION MODEL</div>
+  <h2>Fills you can audit</h2>
+  <p class="sec-sub">Most hobby backtesters fill at the close and call it a day. This engine implements TradingView's broker emulator, rule for rule — so the trade list you see here is the trade list you'd see there.</p>
+  <table class="exec-table">
+    <thead><tr><th>EVENT</th><th>EVALUATED</th><th>FILLED</th></tr></thead>
+    <tbody>
+      <tr><td>strategy.entry / strategy.close</td><td>bar N close</td><td><b>bar N+1 open</b></td></tr>
+      <tr><td>strategy.exit stop</td><td>intrabar</td><td><b>at the stop price</b> — or the open on a gap through it</td></tr>
+      <tr><td>strategy.exit limit</td><td>intrabar</td><td><b>at the limit price</b> — or better on a gap</td></tr>
+      <tr><td>stop + limit in one bar</td><td>bar path</td><td>open nearer high &rarr; <b>open&#8594;high&#8594;low&#8594;close</b>, else open&#8594;low&#8594;high&#8594;close</td></tr>
+      <tr><td>sizing &amp; commission</td><td>strategy() declaration</td><td><b>% of equity, whole shares, % per fill</b></td></tr>
+    </tbody>
+  </table>
+  <p class="foot-note">Indicator math is held to the official Pine reference: ta.ema seeded with the first source value, ta.rma with the SMA seed, population stdev, Wilder RSI, RMA-smoothed ATR. Every rule above is enforced by an automated test transcribed from TradingView's own documentation. Cross-checked against real TradingView trade lists — most recently an AAPL 1D oscillator strategy where 15 of 16 trade legs land on the identical bar, entry prices within pennies.</p>
+</section>
+
+<section class="wrap">
+  <div class="sec-eyebrow">DATA &amp; PRIVACY</div>
+  <h2>Free live data, keys stay home</h2>
+  <div class="facts">
+    <div class="fact"><h3><span class="tick">&#10003;</span> FREE LIVE MARKET DATA</h3><p>Any free Alpaca account unlocks unlimited OHLCV from the IEX feed — 1min, 5min, 15min, 30min, 1H, 1D, with split-only or split+dividend adjustment to match your TradingView chart's &quot;adj&quot; setting. No key yet? You get 5 trial downloads to kick the tires.</p></div>
+    <div class="fact"><h3><span class="tick">&#10003;</span> KEYS NEVER LEAVE YOUR MACHINE</h3><p>API keys are validated against Alpaca once, then stored in a local config file in your home folder. Nothing is bundled in the app, nothing is phoned home. The source is public — check.</p></div>
+    <div class="fact"><h3><span class="tick">&#10003;</span> BRING YOUR OWN CSV</h3><p>Databento, TradingView exports, broker dumps — any OHLCV CSV drops straight in. Column names and delimiters are auto-detected.</p></div>
+    <div class="fact"><h3><span class="tick">&#10003;</span> EVERYTHING RUNS LOCALLY</h3><p>One .exe, one native window. The engine, your strategies, and your results live on your machine — close the window and it's all shut down.</p></div>
+  </div>
+</section>
+
+<section class="wrap" id="download">
+  <div class="dl">
+    <div class="sec-eyebrow">DOWNLOAD</div>
+    <h2>Put your strategy on trial</h2>
+    <p class="sec-sub">One file. Double-click. No Python, no terminal, no account — bring nothing but your Pine.</p>
+    <div class="cta-row" style="justify-content:center">
+      <a class="btn btn-buy" href="https://github.com/WaleA-Dev/wale-pinescript-engine/releases/download/v2.2.0/WaleBacktest.exe">&#8681;&nbsp; WaleBacktest.exe — v2.2.0</a>
+      <a class="btn btn-ghost" href="https://github.com/WaleA-Dev/wale-pinescript-engine/releases" target="_blank" rel="noopener">All releases</a>
+    </div>
+    <div class="dl-meta">
+      <span><b>OS</b> Windows 10/11 x64</span>
+      <span><b>SIZE</b> 174 MB</span>
+      <span><b>RUNTIME</b> none required</span>
+      <span><b>LICENSE</b> CC BY-NC-SA 4.0</span>
+    </div>
+    <div class="smart">
+      <h4>&#9888; FIRST LAUNCH ON WINDOWS</h4>
+      <ol>
+        <li>SmartScreen may warn because the app isn't code-signed yet.</li>
+        <li>Click <b>More info</b>, then <b>Run anyway</b>.</li>
+        <li>The dashboard opens in its own window — you're in.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-in">
+    <span>© 2026 Wale Adekambi &nbsp;·&nbsp; built for traders who want receipts</span>
+    <span>
+      <a href="https://github.com/WaleA-Dev/wale-pinescript-engine" target="_blank" rel="noopener">GitHub</a>
+      &nbsp;·&nbsp; <a href="https://github.com/WaleA-Dev/wale-pinescript-engine/blob/main/README.md" target="_blank" rel="noopener">Docs</a>
+      &nbsp;·&nbsp; v2.2.0
+    </span>
+  </div>
+</footer>
+
+<script>
+// Real trades from the engine's NDAQ 1H replay of the strategy shown on the left.
+const trades = [
+  ["#001","LONG","01-11 21:30","26.90 → 27.30","+1.38%","limit"],
+  ["#002","LONG","01-16 16:30","27.30 → 27.72","+1.44%","limit"],
+  ["#003","LONG","01-17 15:30","27.58 → 28.00","+1.43%","limit"],
+  ["#004","LONG","01-23 15:30","28.07 → 28.58","+1.70%","limit"],
+  ["#005","LONG","01-25 19:30","28.52 → 28.19","−1.26%","stop"],
+  ["#006","LONG","01-28 14:30","28.37 → 28.79","+1.37%","limit"],
+  ["#007","LONG","01-29 15:30","28.71 → 28.33","−1.41%","stop"],
+  ["#008","LONG","01-30 15:30","28.61 → 29.14","+1.75%","limit"],
+];
+const tape = document.getElementById('tape');
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+trades.forEach((t, i) => {
+  const row = document.createElement('div');
+  row.className = 'tr-row';
+  row.style.animationDelay = reduced ? '0s' : (0.35 + i * 0.22) + 's';
+  const pnlCls = t[4].startsWith('+') ? 'up' : 'dn';
+  row.innerHTML = `<span class="id">${t[0]}</span><span class="side">${t[1]}</span>`
+    + `<span class="dt">2019-${t[2]}</span><span class="px">${t[3]}</span>`
+    + `<span class="pnl ${pnlCls}">${t[4]}</span><span class="why">${t[5]}</span>`;
+  tape.appendChild(row);
+});
+// duplicate ticker content for a seamless loop
+const tin = document.getElementById('tickerIn');
+tin.innerHTML += tin.innerHTML;
+</script>
+</body>
+</html>

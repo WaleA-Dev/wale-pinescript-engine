@@ -39,9 +39,11 @@ def _try_dynamic_strategy(name: str) -> Type[BaseStrategy] | None:
         return None
 
     mod = importlib.import_module(f"src.strategies.{module_name}")
+    # Only classes *defined in* the module — not bases imported into it
     class_candidates = [
         obj for obj in vars(mod).values()
-        if isinstance(obj, type) and issubclass(obj, BaseStrategy) and obj is not BaseStrategy
+        if isinstance(obj, type) and issubclass(obj, BaseStrategy)
+        and obj is not BaseStrategy and getattr(obj, "__module__", "") == mod.__name__
     ]
     if not class_candidates:
         return None

@@ -40,3 +40,22 @@ Thumbs.db
 # API keys
 *.key
 secrets.json
+
+# Build & release artifacts
+build/
+dist/
+dist_*/
+*.spec.bak
+
+# Dev screenshots & scratch
+ui_*.png
+UI example.png
+.edge_*/
+
+# Generated reports & data
+reports/
+data/uploads/
+
+# Deployment link (contains project ids)
+.vercel/
+landing/.vercel/
