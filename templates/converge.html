@@ -14,12 +14,13 @@
   --line:#1E2830; --hair:#16202A;
   --paper:#E8EDF2; --dim:#A6B0BA; --faint:#78858F;
   --bid:#2FD57C; --bid-dk:#17A45C; --ask:#FF5C5C; --amber:#FFB454; --blue:#6CB6FF;
+  --ease:cubic-bezier(.2,.8,.2,1);
   --mono:'IBM Plex Mono','Cascadia Mono',Consolas,ui-monospace,monospace;
   --sans:'Archivo','Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
-body{background:var(--ink);color:var(--paper);font-family:var(--sans);font-size:14px;
+body{background:var(--ink);background-image:radial-gradient(1100px 640px at 78% -12%,rgba(34,48,62,.35),transparent 60%);background-attachment:fixed;color:var(--paper);font-family:var(--sans);font-size:14px;
   line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden;
   display:flex;flex-direction:column}
 ::selection{background:var(--bid);color:var(--ink)}
@@ -197,6 +198,7 @@ select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .badge-fail{background:rgba(255,92,92,.12);color:var(--ask)}
 .spin{width:9px;height:9px;border:1.5px solid var(--amber);border-top-color:transparent;border-radius:50%;
   display:inline-block;animation:rot .7s linear infinite}
+.spin-dark{border-color:var(--ink);border-top-color:transparent}
 @keyframes rot{to{transform:rotate(360deg)}}
 .vbox{border-radius:10px;padding:22px;text-align:center;margin-top:14px;border:1px solid var(--line)}
 .vbox .vl{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
@@ -288,6 +290,39 @@ select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .toast.t-err{border-left-color:var(--ask)}
 .toast.t-warn{border-left-color:var(--amber)}
 @keyframes tin{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}
+
+/* ── finish pass: one radius scale, quiet depth, precise numerals, motion ── */
+.card,.scard,.mcard,.tbl-wrap,.chart-box,.vstep,.console,.vbox,
+.empty .steps-hint,.load-err,.err-banner{border-radius:12px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+.field,.btn,.run-btn,.ghost-btn,.arm-btn,.icon-btn,.editor{border-radius:8px}
+.seg{border-radius:10px}
+.seg button{border-radius:7px}
+.ed-tab{border-radius:8px 8px 0 0}
+.badge{border-radius:6px}
+.kbadge,.pchip{border-radius:5px}
+.toast{border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.55)}
+.sheet{border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.55)}
+.station{border-radius:10px}
+
+.btn,.run-btn,.ghost-btn,.arm-btn,.icon-btn,.seg button,.tab,.rail-btn,.station{
+  transition:all .18s var(--ease)}
+.btn:active:not(:disabled),.run-btn:active:not(:disabled),
+.ghost-btn:active:not(:disabled),.arm-btn:active:not(.armed),
+.icon-btn:active{transform:translateY(1px)}
+.field,.editor{caret-color:var(--bid)}
+
+.tbl td,.mcard .mv,.ds-fact .v,.st-sub,.opt-result,.sbar,
+.vstep-det{font-variant-numeric:tabular-nums}
+.mcard .mv{letter-spacing:-.01em}
+.tbl tbody tr{transition:background .12s var(--ease)}
+.tbl tbody tr:hover td{background:rgba(255,255,255,.016)}
+
+.rail-btn.on{box-shadow:inset 2px 0 0 var(--bid)}
+.wire.hot::after{box-shadow:0 0 8px rgba(47,213,124,.35)}
+.view.on{animation:viewin .18s var(--ease)}
+@keyframes viewin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes tout{to{opacity:0;transform:translateX(10px)}}
 
 @media (max-width:1080px){
   .bt-grid,.data-grid,.ws-grid{grid-template-columns:1fr}
@@ -653,7 +688,7 @@ class CustomStrategy(BaseStrategy):
 <!-- ═══ STATUS BAR ═══ -->
 <footer class="sbar">
   <span id="sbarL">Ready</span>
-  <span>Fills at next bar open &nbsp;·&nbsp; stops intrabar &nbsp;·&nbsp; v2.2.0</span>
+  <span>Fills at next bar open &nbsp;·&nbsp; stops intrabar &nbsp;·&nbsp; v2.2.1</span>
 </footer>
 
 <script>
@@ -740,7 +775,8 @@ function toast(msg, kind){
   el.className = 'toast' + (kind === 'err' ? ' t-err' : kind === 'warn' ? ' t-warn' : '');
   el.textContent = msg;
   box.appendChild(el);
-  setTimeout(() => el.remove(), 5200);
+  setTimeout(() => { el.style.animation = 'tout .25s var(--ease) forwards';
+    setTimeout(() => el.remove(), 260); }, 5000);
 }
 function dinfo(t, ok){
   const el = document.getElementById('dataInfo');
@@ -1059,7 +1095,9 @@ async function runBt(extraParams){
   }
   const strat = S.strategies.find(s => s.name === S.active);
   status('Running ' + (strat ? strat.display : S.active) + '...', true);
-  document.getElementById('btnBt').disabled = true;
+  const runBtn = document.getElementById('btnBt');
+  runBtn.disabled = true;
+  runBtn.innerHTML = '<span class="spin spin-dark"></span>Running...';
   document.getElementById('btErrBanner').classList.remove('show');
   try{
     const body = { strategy: S.active, commission: parseFloat(document.getElementById('commInput').value) || 0.001 };
@@ -1080,7 +1118,8 @@ async function runBt(extraParams){
       }
     }
   }catch(e){ status('Error: ' + e.message); }
-  document.getElementById('btnBt').disabled = false;
+  runBtn.innerHTML = '&#9654;&nbsp;Run backtest';
+  runBtn.disabled = false;
   refreshTicket();
 }
 function runBtWithBest(){ if (S.bestParams) runBt(S.bestParams); }

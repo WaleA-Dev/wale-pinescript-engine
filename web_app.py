@@ -109,7 +109,7 @@ def _strategy_display_name(cls) -> str:
         first = doc[0].replace("(auto-transpiled)", "").strip()
         first = re.sub(r"^translated from:\s*", "", first, flags=re.I).rstrip(":").strip()
         if first and not first.lower().startswith(("custom python", "base class")):
-            return first[:48]
+            return first if len(first) <= 60 else first[:57] + "..."
     name = cls.__name__
     return re.sub(r"(?<!^)(?=[A-Z])", " ", name.removesuffix("Strategy")).strip()
 
