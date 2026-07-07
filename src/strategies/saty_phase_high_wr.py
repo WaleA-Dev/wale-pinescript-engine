@@ -89,27 +89,6 @@ class SatyPhaseHighWrStrategy(PineStrategy):
         return PARAM_GRID_DEFAULT
 
 
-<<<<<<< HEAD
-=======
-    def _calc_rsi(self, series, period=14):
-        delta = series.diff()
-        gain = delta.where(delta > 0, 0.0)
-        loss = -delta.where(delta < 0, 0.0)
-        avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
-        avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
-        rs = avg_gain / avg_loss
-        return 100 - (100 / (1 + rs))
-
-    def _calc_macd(self, series, fast=12, slow=26, signal=9):
-        ema_fast = series.ewm(span=fast, adjust=False).mean()
-        ema_slow = series.ewm(span=slow, adjust=False).mean()
-        macd = ema_fast - ema_slow
-        signal_line = macd.ewm(span=signal, adjust=False).mean()
-        hist = macd - signal_line
-        return macd, signal_line, hist
-
-# Auto-generated parameter grid
->>>>>>> origin/main
 PARAM_GRID_DEFAULT = {
     'stop_loss_pct': [12.6, 14.0, 15.4],
     'trailing_pct': [0.36, 0.4, 0.44],

@@ -688,7 +688,7 @@ class CustomStrategy(BaseStrategy):
 <!-- ═══ STATUS BAR ═══ -->
 <footer class="sbar">
   <span id="sbarL">Ready</span>
-  <span>Fills at next bar open &nbsp;·&nbsp; stops intrabar &nbsp;·&nbsp; v2.2.1</span>
+  <span>Fills at next bar open &nbsp;·&nbsp; stops intrabar &nbsp;·&nbsp; v2.2.2</span>
 </footer>
 
 <script>
@@ -1157,11 +1157,11 @@ function renderTr(d){
     '<tr><td>' + t.id + '</td>' +
     '<td class="' + (t.direction === 'LONG' ? 'pos' : 'neg') + '">' + t.direction + '</td>' +
     '<td style="font-size:10px">' + (t.entry_date || '') + '</td>' +
-    '<td>$' + t.entry_price.toFixed(2) + '</td>' +
+    '<td>$' + (t.entry_price != null ? t.entry_price.toFixed(2) : '—') + '</td>' +
     '<td style="font-size:10px">' + (t.exit_date || '') + '</td>' +
-    '<td>$' + t.exit_price.toFixed(2) + '</td>' +
+    '<td>' + (t.exit_price != null ? '$' + t.exit_price.toFixed(2) : '<span style="color:var(--faint)">Open</span>') + '</td>' +
     '<td style="color:var(--faint)">' + (t.bars_held || '') + '</td>' +
-    '<td class="' + (t.pnl_pct >= 0 ? 'pos' : 'neg') + '">' + (t.pnl_pct >= 0 ? '+' : '') + t.pnl_pct.toFixed(2) + '%</td></tr>'
+    '<td class="' + (t.pnl_pct >= 0 ? 'pos' : 'neg') + '">' + (t.exit_price == null ? '<span style="color:var(--faint)">—</span>' : (t.pnl_pct >= 0 ? '+' : '') + t.pnl_pct.toFixed(2) + '%') + '</td></tr>'
   ).join('');
 }
 
@@ -1273,8 +1273,10 @@ async function _downloadFile(filename, content, mime){
 }
 function downloadTrades(){
   const d = S.results; if (!d || !d.trades.length) return;
-  const rows = d.trades.map(t => [t.id, t.direction, t.entry_date || '', t.entry_price.toFixed(2),
-    t.exit_date || '', t.exit_price.toFixed(2), t.bars_held || '', t.pnl_pct.toFixed(2)].join(','));
+  const rows = d.trades.map(t => [t.id, t.direction, t.entry_date || '',
+    t.entry_price != null ? t.entry_price.toFixed(2) : '',
+    t.exit_date || '', t.exit_price != null ? t.exit_price.toFixed(2) : '',
+    t.bars_held || '', t.exit_price != null ? t.pnl_pct.toFixed(2) : ''].join(','));
   _downloadFile('trades_' + (d.strategy || 'backtest') + '.csv',
     '#,Direction,Entry Date,Entry Price,Exit Date,Exit Price,Bars Held,PnL %\n' + rows.join('\n'));
 }
@@ -1404,13 +1406,13 @@ function showVal(r){
     showVbox('QUICK', 'Permutation tests skipped', 'v-meh'); status('Quick validation done', true); return;
   }
   const ip = r.is_pvalue < .05;
-  document.getElementById('vd2').textContent = 'p=' + r.is_pvalue.toFixed(6);
+  document.getElementById('vd2').textContent = 'p=' + (r.is_pvalue != null ? r.is_pvalue.toFixed(6) : 'n/a');
   vbadge('vb2', ip ? 'badge-pass' : 'badge-fail', ip ? 'p<0.05' : 'p>=0.05');
   document.getElementById('vd3').textContent = 'OOS PF: ' + (r.oos_pf || 0).toFixed(4) + ' | Sharpe: ' + (r.oos_sharpe || 0).toFixed(4);
   const op = (r.oos_pf || 0) >= 1.1;
   vbadge('vb3', op ? 'badge-pass' : 'badge-fail', op ? 'PF>=1.1' : 'PF<1.1');
   const wp = r.wf_pvalue < (r.wf_threshold || .05);
-  document.getElementById('vd4').textContent = 'p=' + r.wf_pvalue.toFixed(6) + ' | thresh: ' + (r.wf_threshold || .05);
+  document.getElementById('vd4').textContent = 'p=' + (r.wf_pvalue != null ? r.wf_pvalue.toFixed(6) : 'n/a') + ' | thresh: ' + (r.wf_threshold || .05);
   vbadge('vb4', wp ? 'badge-pass' : 'badge-fail', wp ? 'Pass' : 'Fail');
   const v = r.verdict || 'UNKNOWN';
   const vm = {VALIDATED: 'Statistically significant edge detected.', OVERFIT: 'Performance indistinguishable from random.', POOR: 'Weak metrics, not worth trading.'};

@@ -79,12 +79,6 @@ class StrategyParams:
     use_extreme_entry: bool = False
     extreme_threshold: float = -110.0
 
-    # Secondary oscillator entry: osc[1] <= prev_threshold and osc > curr_threshold
-    # with different thresholds (e.g. "leaving extreme zone" entries)
-    use_secondary_osc_entry: bool = False
-    secondary_prev_threshold: float = -50.0
-    secondary_curr_threshold: float = -110.0
-
     # Consolidation Filter
     use_consolidation_filter: bool = False
     consolidation_lookback: int = 400
@@ -174,10 +168,6 @@ class PineScriptParser:
 
         # Remove comments for cleaner parsing
         self._clean_content = self._remove_comments(self.content)
-
-        # Fields explicitly set from inputs/ternaries. Pattern detectors must
-        # not override these (e.g. a preset that turns an exit off).
-        self._explicit_fields: set = set()
 
     def _remove_comments(self, text: str) -> str:
         """Remove single-line and multi-line comments."""
@@ -556,21 +546,7 @@ class PineScriptParser:
         if not preset_var or preset_val is None:
             return
 
-<<<<<<< HEAD
         preset_val_str = str(preset_val).strip()
-=======
-        # Find all ternary assignments based on preset
-        # Pattern: var = preset == "X" ? value : preset == "Y" ? value : default
-        # Values may be numbers (incl. negative), true/false, or identifiers
-        # that refer to previously parsed inputs (e.g. custom_sl).
-        value_token = r'-?[0-9.]+|true|false|\w+'
-        ternary_pattern = (
-            r'(\w+)\s*=\s*'  # variable name
-            rf'(?:preset\s*==\s*["\']([^"\']+)["\']\s*\?\s*({value_token})\s*:\s*)'  # first branch
-            rf'(?:preset\s*==\s*["\']([^"\']+)["\']\s*\?\s*({value_token})\s*:\s*)?'  # optional second branch
-            rf'({value_token})'  # default
-        )
->>>>>>> origin/main
 
         # Evaluate line-by-line to keep regex simple and robust.
         for raw_line in self._clean_content.splitlines():
@@ -580,7 +556,6 @@ class PineScriptParser:
             if preset_var not in line:
                 continue
 
-<<<<<<< HEAD
             # 2-branch ternary:
             # var = preset == "A" ? a : preset == "B" ? b : c
             two_branch = re.match(
@@ -622,35 +597,6 @@ class PineScriptParser:
                 chosen = self._resolve_token_value(v1, params) if preset_val_str == p1 else self._resolve_token_value(v_default, params)
                 if chosen is not None:
                     self._assign_param(params, var_name, chosen)
-=======
-            # Pick the branch token matching the preset value
-            if match.group(2) and preset_val == match.group(2):
-                token = match.group(3)
-            elif match.group(4) and preset_val == match.group(4):
-                token = match.group(5)
-            else:
-                token = match.group(6)
-
-            value = self._resolve_value_token(token, params)
-            if value is not None:
-                self._assign_param(params, var_name, value)
->>>>>>> origin/main
-
-    def _resolve_value_token(self, token: Optional[str], params: StrategyParams) -> Optional[Any]:
-        """Resolve a Pine literal or identifier to a Python value."""
-        if token is None:
-            return None
-        t = token.strip()
-        if t.lower() == 'true':
-            return True
-        if t.lower() == 'false':
-            return False
-        try:
-            return float(t)
-        except ValueError:
-            pass
-        # Identifier: look up a previously parsed input value
-        return params.custom_params.get(t)
 
     def _detect_oscillator_pattern(self, params: StrategyParams) -> None:
         """
@@ -660,7 +606,6 @@ class PineScriptParser:
         content = self._clean_content
 
         # Look for oscillator-like formula: (close - ema) / (N * atr)
-        # N and the scale may be ints or floats (e.g. 3.0 * atr14)
         osc_pattern = re.search(
             r'(\w+)\s*=\s*\(\s*\(\s*close\s*-\s*(\w+)\s*\)\s*/\s*\(\s*(\d+(?:\.\d+)?)\s*\*\s*(\w+)\s*\)\s*\)\s*\*\s*(\d+(?:\.\d+)?)',
             content
@@ -707,16 +652,10 @@ class PineScriptParser:
             try:
                 threshold = float(cross_exit.group(1))
                 if threshold > 50:  # Likely an overbought threshold
-<<<<<<< HEAD
-=======
-                    if 'use_ob_exit' not in self._explicit_fields:
-                        params.use_ob_exit = True
->>>>>>> origin/main
                     params.ob_threshold = threshold
             except ValueError:
                 pass
 
-<<<<<<< HEAD
         # Detect expression-style oscillator crossings:
         # e.g. oscillator[1] <= entry_threshold and oscillator > entry_threshold
         # or   oscillator[1] <= -50 and oscillator > -110
@@ -763,78 +702,6 @@ class PineScriptParser:
                 params.ob_threshold = prev_thr
                 if not ob_is_guarded:
                     params.use_ob_exit = True
-=======
-        self._detect_manual_crossovers(params)
-
-    def _detect_manual_crossovers(self, params: StrategyParams) -> None:
-        """
-        Detect crossovers written without ta.crossover/crossunder:
-
-            osc[1] <= A and osc > B   (entry, A == B: plain threshold cross;
-                                       A != B: secondary/extreme-zone entry)
-            osc[1] >= A and osc < A   (overbought exit)
-
-        Thresholds may be numeric literals or identifiers bound to inputs.
-        """
-        content = self._clean_content
-        token = r'-?\d+(?:\.\d+)?|\w+'
-
-        def resolve(tok: str) -> Optional[float]:
-            value = self._resolve_value_token(tok, params)
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return float(value)
-            # Identifier routed to a known params field during input parsing
-            norm = tok.strip().lower().replace('_', '')
-            if norm in ('entrythreshold', 'entrylevel', 'entrythresh'):
-                return params.entry_threshold
-            if norm in ('extremethreshold', 'extremelevel'):
-                return params.extreme_threshold
-            return None
-
-        # --- Entry-style crossover: osc[1] <= A and osc > B ---
-        entry_pattern = re.finditer(
-            rf'(\w+)\s*\[\s*1\s*\]\s*<=\s*({token})\s+and\s+\1\s*>\s*({token})',
-            content
-        )
-        for match in entry_pattern:
-            prev_tok, curr_tok = match.group(2).strip(), match.group(3).strip()
-
-            if prev_tok == curr_tok:
-                # Plain threshold cross: osc leaves the zone below A
-                params.use_oscillator_entry = True
-                threshold = resolve(prev_tok)
-                if threshold is not None:
-                    if 'entry_threshold' in self._explicit_fields:
-                        # Input already fixed the primary threshold; a different
-                        # numeric level is an extreme-zone variant
-                        if threshold != params.entry_threshold:
-                            params.use_extreme_entry = True
-                            params.extreme_threshold = threshold
-                    else:
-                        params.entry_threshold = threshold
-            else:
-                prev_val, curr_val = resolve(prev_tok), resolve(curr_tok)
-                if prev_val is not None and curr_val is not None:
-                    params.use_oscillator_entry = True
-                    params.use_secondary_osc_entry = True
-                    params.secondary_prev_threshold = prev_val
-                    params.secondary_curr_threshold = curr_val
-
-        # --- Exit-style crossunder: osc[1] >= A and osc < A ---
-        exit_pattern = re.finditer(
-            rf'(\w+)\s*\[\s*1\s*\]\s*>=\s*({token})\s+and\s+\1\s*<\s*({token})',
-            content
-        )
-        for match in exit_pattern:
-            prev_tok, curr_tok = match.group(2).strip(), match.group(3).strip()
-            if prev_tok != curr_tok:
-                continue
-            threshold = resolve(prev_tok)
-            if threshold is not None and threshold > 50:
-                if 'use_ob_exit' not in self._explicit_fields:
-                    params.use_ob_exit = True
-                params.ob_threshold = threshold
->>>>>>> origin/main
 
     def _detect_consolidation_filter(self, params: StrategyParams) -> None:
         """Detect consolidation filter patterns."""
@@ -936,7 +803,6 @@ class PineScriptParser:
         # Normalize name
         norm = name.lower().replace('_', '').replace('-', '')
 
-<<<<<<< HEAD
         # --- Momentum (must be checked before EMA crossover aliases) ---
         if any(x in norm for x in ['momentumconfirm', 'usemomentum']):
             if isinstance(value, bool):
@@ -947,15 +813,6 @@ class PineScriptParser:
                 params.momentum_ema_fast = value
                 return
         if any(x in norm for x in ['momentumslowlen', 'momentumslow', 'momslowlen', 'momentumemaslow']):
-=======
-        # --- Momentum EMAs (checked before the two-EMA system because names
-        # like momentum_ema_fast contain "emafast" and must not enable it) ---
-        if any(x in norm for x in ['momentumemafast', 'momentumfastlen', 'momentumfast', 'momfastlen']):
-            if isinstance(value, int):
-                params.momentum_ema_fast = value
-                return
-        if any(x in norm for x in ['momentumemaslow', 'momentumslowlen', 'momentumslow', 'momslowlen']):
->>>>>>> origin/main
             if isinstance(value, int):
                 params.momentum_ema_slow = value
                 return
@@ -973,33 +830,6 @@ class PineScriptParser:
                     params.ema_slow_length = value
                     params.use_ema_crossover = True
                     return
-
-        # --- Oscillator entry threshold ---
-        if norm in ('entrythreshold', 'entrylevel', 'entrythresh'):
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                params.entry_threshold = float(value)
-                self._explicit_fields.add('entry_threshold')
-                return
-
-        # --- Overbought / oversold exit toggles and levels ---
-        if norm in ('useobexit', 'obexit', 'useoverboughtexit'):
-            if isinstance(value, bool):
-                params.use_ob_exit = value
-                self._explicit_fields.add('use_ob_exit')
-                return
-        if norm in ('obthreshold', 'oblevel', 'overboughtthreshold', 'overboughtlevel'):
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                params.ob_threshold = float(value)
-                return
-        if norm in ('useosexit', 'osexit', 'useoversoldexit'):
-            if isinstance(value, bool):
-                params.use_os_exit = value
-                self._explicit_fields.add('use_os_exit')
-                return
-        if norm in ('osthreshold', 'oslevel', 'oversoldthreshold', 'oversoldlevel'):
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                params.os_threshold = float(value)
-                return
 
         # --- RSI min/max range filter ---
         if norm in ('rsimin', 'rsiminimum', 'rsilower'):
@@ -1220,15 +1050,6 @@ class PineScriptParser:
                 params.atr_multiplier = float(value)
                 return
 
-<<<<<<< HEAD
-=======
-        # --- Momentum confirm toggle (fast/slow lengths handled above) ---
-        if any(x in norm for x in ['momentumconfirm', 'usemomentum']):
-            if isinstance(value, bool):
-                params.use_momentum_confirm = value
-                return
-
->>>>>>> origin/main
         # --- Order sizing ---
         if any(x in norm for x in ['ordersize', 'positionsize', 'qtyp']):
             if isinstance(value, (int, float)):
@@ -1315,14 +1136,9 @@ class PineScriptParser:
             content, re.DOTALL
         ))
 
-        # Check for manual trailing stop logic in exit section.
-        # Matches comparisons with trail-stop variables on either side
-        # (low <= trailStopPrice, trail_stop >= close) and trailing-active
-        # state flags (trailingActive), which imply a manual trailing exit.
+        # Check for manual trailing stop logic in exit section
         has_manual_trail = bool(re.search(
-            r'(?:trail(?:ing)?_?(?:stop|sl)\w*\s*[<>=])'
-            r'|(?:[<>=]=?\s*trail(?:ing)?_?(?:stop|sl)\w*)'
-            r'|(?:\btrail(?:ing)?_?active\b)',
+            r'trail(?:ing)?(?:_?stop|_?sl)\s*[<>=]',
             content, re.IGNORECASE
         ))
 
