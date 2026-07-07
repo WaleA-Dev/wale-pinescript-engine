@@ -44,6 +44,12 @@ class StrategyParams:
     ob_threshold: float = 70.0
     use_os_exit: bool = False  # Oversold exit
     os_threshold: float = 30.0
+    use_stale_recycle: bool = False
+    stale_recycle_bars: int = 380
+    stale_recycle_min_pnl_pct: float = 0.0
+    stale_recycle_max_pnl_pct: float = 1.5
+    use_emergency_exit: bool = False
+    max_hold_bars: int = 10000
 
     # EMA Filter
     use_ema_filter: bool = False
@@ -55,6 +61,9 @@ class StrategyParams:
     use_ema_crossover: bool = False
     ema_fast_length: int = 20
     ema_slow_length: int = 50
+    use_rsi_pullback_entry: bool = False
+    rsi_pullback_long: float = 45.0
+    rsi_pullback_short: float = 55.0
 
     # Custom Oscillator Entry (Saty Phase pattern)
     use_oscillator_entry: bool = False
@@ -64,14 +73,11 @@ class StrategyParams:
     oscillator_atr_mult: float = 3.0
     oscillator_scale: float = 100.0
     entry_threshold: float = -50.0
-    use_extreme_entry: bool = False
-    extreme_threshold: float = -110.0
-
-    # Secondary oscillator entry: osc[1] <= prev_threshold and osc > curr_threshold
-    # with different thresholds (e.g. "leaving extreme zone" entries)
     use_secondary_osc_entry: bool = False
     secondary_prev_threshold: float = -50.0
     secondary_curr_threshold: float = -110.0
+    use_extreme_entry: bool = False
+    extreme_threshold: float = -110.0
 
     # Consolidation Filter
     use_consolidation_filter: bool = False
@@ -112,9 +118,11 @@ class StrategyParams:
     long_only: bool = True
     short_only: bool = False
     enable_shorts: bool = False
+    allow_reversal: bool = False
 
     # Exit type: "strategy_exit" (stop/limit orders) or "strategy_close" (market close next bar)
     exit_type: str = "strategy_exit"
+    trailing_activation_on_close: bool = False
 
     # Custom parameters (for strategy-specific inputs)
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -134,8 +142,10 @@ class StrategySettings:
     commission_type: str = "percent"
     commission_value: float = 0.1
     slippage: int = 0
+    calc_on_order_fills: bool = False
     process_orders_on_close: bool = False
     calc_on_every_tick: bool = False
+    use_bar_magnifier: bool = False
     pyramiding: int = 0
 
 
@@ -159,31 +169,79 @@ class PineScriptParser:
         # Remove comments for cleaner parsing
         self._clean_content = self._remove_comments(self.content)
 
-        # Fields explicitly set from inputs/ternaries. Pattern detectors must
-        # not override these (e.g. a preset that turns an exit off).
-        self._explicit_fields: set = set()
-
     def _remove_comments(self, text: str) -> str:
         """Remove single-line and multi-line comments."""
         text = re.sub(r'//.*$', '', text, flags=re.MULTILINE)
         text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
         return text
 
+    def _extract_function_call_args(self, func_name: str) -> Optional[str]:
+        """
+        Extract top-level function call arguments with balanced parentheses.
+
+        This avoids regex breakage for calls containing nested parentheses
+        inside quoted strings, e.g. strategy("Name (v1)", ...).
+        """
+        text = self._clean_content
+        match = re.search(rf'\b{re.escape(func_name)}\s*\(', text)
+        if not match:
+            return None
+
+        depth = 0
+        start = None
+        in_single = False
+        in_double = False
+        escape = False
+
+        for i in range(match.end() - 1, len(text)):
+            ch = text[i]
+
+            if escape:
+                escape = False
+                continue
+
+            if ch == '\\':
+                escape = True
+                continue
+
+            if in_single:
+                if ch == "'":
+                    in_single = False
+                continue
+
+            if in_double:
+                if ch == '"':
+                    in_double = False
+                continue
+
+            if ch == "'":
+                in_single = True
+                continue
+
+            if ch == '"':
+                in_double = True
+                continue
+
+            if ch == '(':
+                depth += 1
+                if depth == 1:
+                    start = i + 1
+                continue
+
+            if ch == ')':
+                depth -= 1
+                if depth == 0 and start is not None:
+                    return text[start:i]
+
+        return None
+
     def parse_strategy_settings(self) -> StrategySettings:
         """Extract strategy() declaration settings."""
         settings = StrategySettings()
 
-        # Find strategy() call - handle multi-line
-        strategy_match = re.search(
-            r'strategy\s*\((.*?)\)',
-            self._clean_content,
-            re.DOTALL
-        )
-
-        if not strategy_match:
+        args = self._extract_function_call_args('strategy')
+        if not args:
             return settings
-
-        args = strategy_match.group(1)
 
         # Parse title
         title_match = re.search(r'["\']([^"\']+)["\']', args)
@@ -234,6 +292,21 @@ class PineScriptParser:
         if process_match:
             settings.process_orders_on_close = process_match.group(1).lower() == 'true'
 
+        # Parse calc_on_order_fills
+        fills_match = re.search(r'calc_on_order_fills\s*=\s*(true|false)', args, re.IGNORECASE)
+        if fills_match:
+            settings.calc_on_order_fills = fills_match.group(1).lower() == 'true'
+
+        # Parse calc_on_every_tick
+        cot_match = re.search(r'calc_on_every_tick\s*=\s*(true|false)', args, re.IGNORECASE)
+        if cot_match:
+            settings.calc_on_every_tick = cot_match.group(1).lower() == 'true'
+
+        # Parse use_bar_magnifier
+        bm_match = re.search(r'use_bar_magnifier\s*=\s*(true|false)', args, re.IGNORECASE)
+        if bm_match:
+            settings.use_bar_magnifier = bm_match.group(1).lower() == 'true'
+
         # Parse pyramiding
         pyramid_match = re.search(r'pyramiding\s*=\s*(\d+)', args)
         if pyramid_match:
@@ -245,7 +318,15 @@ class PineScriptParser:
         """Extract all input parameters from PineScript."""
         params = StrategyParams()
 
-        # Parse all input types
+        # Parse simple assignments FIRST (lowest priority)
+        # e.g., emaFastLen = 20, slMult = 1.8, useShorts = false
+        self._parse_simple_assignments(params)
+
+        # Parse generic input() calls (medium priority, overrides simple assignments)
+        # e.g., emaFastLen = input(20, "EMA Fast Length")
+        self._parse_generic_inputs(params)
+
+        # Parse typed input calls (highest priority, overrides all above)
         self._parse_float_inputs(params)
         self._parse_int_inputs(params)
         self._parse_bool_inputs(params)
@@ -257,6 +338,8 @@ class PineScriptParser:
         # Detect strategy patterns
         self._detect_oscillator_pattern(params)
         self._detect_consolidation_filter(params)
+        self._detect_rsi_pullback_pattern(params)
+        self._detect_directional_entries(params)
         self.detect_exit_pattern(params)
 
         return params
@@ -299,64 +382,221 @@ class PineScriptParser:
             value = match.group(2)
             params.custom_params[name] = value
 
+    def _parse_generic_inputs(self, params: StrategyParams) -> None:
+        """
+        Parse generic input() declarations (without type suffix).
+        e.g., emaFastLen = input(20, "EMA Fast Length")
+        """
+        # Match: name = input(value, ...) but NOT input.int/float/bool/string
+        pattern = r'(\w+)\s*=\s*input\s*\(\s*([^,\)]+)'
+        for match in re.finditer(pattern, self._clean_content):
+            # Skip if this is actually input.int/float/bool/string (already handled)
+            full_match = match.group(0)
+            if re.search(r'input\.(int|float|bool|string|source|timeframe)', full_match):
+                continue
+
+            name = match.group(1)
+            raw_value = match.group(2).strip().strip('"\'')
+
+            # Try to parse as number
+            try:
+                if '.' in raw_value:
+                    value = float(raw_value)
+                else:
+                    value = int(raw_value)
+                self._assign_param(params, name, value)
+                continue
+            except ValueError:
+                pass
+
+            # Try to parse as boolean
+            if raw_value.lower() in ('true', 'false'):
+                self._assign_param(params, name, raw_value.lower() == 'true')
+                continue
+
+            # Store as custom string param
+            params.custom_params[name] = raw_value
+
+    def _parse_simple_assignments(self, params: StrategyParams) -> None:
+        """
+        Parse simple variable assignments (not input calls).
+
+        Matches patterns like:
+            emaFastLen = 20
+            slMult = 1.8
+            useShorts = false
+
+        Only matches when the right-hand side is a bare literal (number or boolean).
+        Skips reassignments (:=) and lines with function calls or operators on RHS.
+        """
+        content = self._clean_content
+
+        # Match: name = number (integer or float)
+        # Negative lookbehind for ':' prevents matching ':=' reassignments
+        # Ensure RHS is just a number, not part of a larger expression
+        num_pattern = r'(?:^|\n)\s*(?:var\s+)?(?:int\s+|float\s+)?(\w+)\s*(?<!:)=\s*(-?\d+(?:\.\d+)?)\s*(?:\n|$|//)'
+        for match in re.finditer(num_pattern, content, re.MULTILINE):
+            name = match.group(1)
+            raw = match.group(2).strip()
+
+            # Skip if this line also has input(), ta.*, strategy.*, or other function calls
+            line_start = match.start()
+            line_end = match.end()
+            line = content[line_start:line_end]
+            if 'input' in line or 'ta.' in line or 'strategy.' in line:
+                continue
+            # Skip common non-parameter names
+            if name in ('i', 'j', 'k', 'n', 'x', 'y', 'bar_index', 'time', 'close',
+                        'open', 'high', 'low', 'volume', 'na', 'color', 'label',
+                        'line', 'box', 'table', 'array', 'matrix', 'map'):
+                continue
+
+            try:
+                if '.' in raw:
+                    value = float(raw)
+                else:
+                    value = int(raw)
+                self._assign_param(params, name, value)
+            except ValueError:
+                pass
+
+        # Match: name = true/false
+        bool_pattern = r'(?:^|\n)\s*(?:var\s+)?(?:bool\s+)?(\w+)\s*(?<!:)=\s*(true|false)\s*(?:\n|$|//)'
+        for match in re.finditer(bool_pattern, content, re.MULTILINE | re.IGNORECASE):
+            name = match.group(1)
+            line_start = match.start()
+            line_end = match.end()
+            line = content[line_start:line_end]
+            if 'input' in line:
+                continue
+            if name in ('i', 'j', 'k', 'n', 'x', 'y', 'bar_index'):
+                continue
+
+            value = match.group(2).lower() == 'true'
+            self._assign_param(params, name, value)
+
+    def _resolve_token_value(self, token: str, params: StrategyParams) -> Optional[Any]:
+        """
+        Resolve a Pine token into a concrete value when possible.
+
+        Supports:
+        - numeric literals
+        - booleans
+        - quoted strings
+        - already parsed params/custom params references
+        """
+        t = token.strip().rstrip(',')
+
+        if not t:
+            return None
+
+        if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+            return t[1:-1]
+
+        tl = t.lower()
+        if tl == 'true':
+            return True
+        if tl == 'false':
+            return False
+
+        try:
+            if '.' in t:
+                return float(t)
+            return int(t)
+        except ValueError:
+            pass
+
+        # Resolve identifiers already parsed into StrategyParams fields.
+        if hasattr(params, t):
+            return getattr(params, t)
+
+        # Resolve from custom params (exact or case-insensitive key match).
+        if t in params.custom_params:
+            return params.custom_params[t]
+        for k, v in params.custom_params.items():
+            if str(k).lower() == tl:
+                return v
+
+        return None
+
+    def _resolve_numeric_token(self, token: str, params: StrategyParams) -> Optional[float]:
+        """Resolve a token to float, if possible."""
+        v = self._resolve_token_value(token, params)
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        return None
+
     def _evaluate_preset_assignments(self, params: StrategyParams) -> None:
         """
         Evaluate ternary assignments that depend on preset string values.
 
         Pattern: varname = preset == "X" ? val1 : preset == "Y" ? val2 : val3
         """
-        # Find the preset variable and its value
+        # Find preset variable/value from parsed inputs.
+        preset_var = None
         preset_val = None
         for key, val in params.custom_params.items():
-            if 'preset' in key.lower():
+            if 'preset' in str(key).lower():
+                preset_var = str(key)
                 preset_val = val
                 break
 
-        if not preset_val:
+        if not preset_var or preset_val is None:
             return
 
-        # Find all ternary assignments based on preset
-        # Pattern: var = preset == "X" ? value : preset == "Y" ? value : default
-        # Values may be numbers (incl. negative), true/false, or identifiers
-        # that refer to previously parsed inputs (e.g. custom_sl).
-        value_token = r'-?[0-9.]+|true|false|\w+'
-        ternary_pattern = (
-            r'(\w+)\s*=\s*'  # variable name
-            rf'(?:preset\s*==\s*["\']([^"\']+)["\']\s*\?\s*({value_token})\s*:\s*)'  # first branch
-            rf'(?:preset\s*==\s*["\']([^"\']+)["\']\s*\?\s*({value_token})\s*:\s*)?'  # optional second branch
-            rf'({value_token})'  # default
-        )
+        preset_val_str = str(preset_val).strip()
 
-        for match in re.finditer(ternary_pattern, self._clean_content):
-            var_name = match.group(1)
+        # Evaluate line-by-line to keep regex simple and robust.
+        for raw_line in self._clean_content.splitlines():
+            line = raw_line.strip()
+            if not line or '=' not in line or '?' not in line or ':' not in line:
+                continue
+            if preset_var not in line:
+                continue
 
-            # Pick the branch token matching the preset value
-            if match.group(2) and preset_val == match.group(2):
-                token = match.group(3)
-            elif match.group(4) and preset_val == match.group(4):
-                token = match.group(5)
-            else:
-                token = match.group(6)
+            # 2-branch ternary:
+            # var = preset == "A" ? a : preset == "B" ? b : c
+            two_branch = re.match(
+                rf'^(?:var\s+)?(?:float|int|bool|string)?\s*(\w+)\s*=\s*{re.escape(preset_var)}\s*==\s*["\']([^"\']+)["\']\s*\?\s*([^:]+?)\s*:\s*'
+                rf'{re.escape(preset_var)}\s*==\s*["\']([^"\']+)["\']\s*\?\s*([^:]+?)\s*:\s*(.+)$',
+                line
+            )
+            if two_branch:
+                var_name = two_branch.group(1)
+                p1 = two_branch.group(2).strip()
+                v1 = two_branch.group(3).strip()
+                p2 = two_branch.group(4).strip()
+                v2 = two_branch.group(5).strip()
+                v_default = two_branch.group(6).strip()
 
-            value = self._resolve_value_token(token, params)
-            if value is not None:
-                self._assign_param(params, var_name, value)
+                if preset_val_str == p1:
+                    chosen = self._resolve_token_value(v1, params)
+                elif preset_val_str == p2:
+                    chosen = self._resolve_token_value(v2, params)
+                else:
+                    chosen = self._resolve_token_value(v_default, params)
 
-    def _resolve_value_token(self, token: Optional[str], params: StrategyParams) -> Optional[Any]:
-        """Resolve a Pine literal or identifier to a Python value."""
-        if token is None:
-            return None
-        t = token.strip()
-        if t.lower() == 'true':
-            return True
-        if t.lower() == 'false':
-            return False
-        try:
-            return float(t)
-        except ValueError:
-            pass
-        # Identifier: look up a previously parsed input value
-        return params.custom_params.get(t)
+                if chosen is not None:
+                    self._assign_param(params, var_name, chosen)
+                continue
+
+            # 1-branch ternary:
+            # var = preset == "A" ? a : b
+            one_branch = re.match(
+                rf'^(?:var\s+)?(?:float|int|bool|string)?\s*(\w+)\s*=\s*{re.escape(preset_var)}\s*==\s*["\']([^"\']+)["\']\s*\?\s*([^:]+?)\s*:\s*(.+)$',
+                line
+            )
+            if one_branch:
+                var_name = one_branch.group(1)
+                p1 = one_branch.group(2).strip()
+                v1 = one_branch.group(3).strip()
+                v_default = one_branch.group(4).strip()
+
+                chosen = self._resolve_token_value(v1, params) if preset_val_str == p1 else self._resolve_token_value(v_default, params)
+                if chosen is not None:
+                    self._assign_param(params, var_name, chosen)
 
     def _detect_oscillator_pattern(self, params: StrategyParams) -> None:
         """
@@ -366,7 +606,6 @@ class PineScriptParser:
         content = self._clean_content
 
         # Look for oscillator-like formula: (close - ema) / (N * atr)
-        # N and the scale may be ints or floats (e.g. 3.0 * atr14)
         osc_pattern = re.search(
             r'(\w+)\s*=\s*\(\s*\(\s*close\s*-\s*(\w+)\s*\)\s*/\s*\(\s*(\d+(?:\.\d+)?)\s*\*\s*(\w+)\s*\)\s*\)\s*\*\s*(\d+(?:\.\d+)?)',
             content
@@ -413,82 +652,56 @@ class PineScriptParser:
             try:
                 threshold = float(cross_exit.group(1))
                 if threshold > 50:  # Likely an overbought threshold
-                    if 'use_ob_exit' not in self._explicit_fields:
-                        params.use_ob_exit = True
                     params.ob_threshold = threshold
             except ValueError:
                 pass
 
-        self._detect_manual_crossovers(params)
-
-    def _detect_manual_crossovers(self, params: StrategyParams) -> None:
-        """
-        Detect crossovers written without ta.crossover/crossunder:
-
-            osc[1] <= A and osc > B   (entry, A == B: plain threshold cross;
-                                       A != B: secondary/extreme-zone entry)
-            osc[1] >= A and osc < A   (overbought exit)
-
-        Thresholds may be numeric literals or identifiers bound to inputs.
-        """
-        content = self._clean_content
-        token = r'-?\d+(?:\.\d+)?|\w+'
-
-        def resolve(tok: str) -> Optional[float]:
-            value = self._resolve_value_token(tok, params)
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return float(value)
-            # Identifier routed to a known params field during input parsing
-            norm = tok.strip().lower().replace('_', '')
-            if norm in ('entrythreshold', 'entrylevel', 'entrythresh'):
-                return params.entry_threshold
-            if norm in ('extremethreshold', 'extremelevel'):
-                return params.extreme_threshold
-            return None
-
-        # --- Entry-style crossover: osc[1] <= A and osc > B ---
-        entry_pattern = re.finditer(
-            rf'(\w+)\s*\[\s*1\s*\]\s*<=\s*({token})\s+and\s+\1\s*>\s*({token})',
-            content
+        # Detect expression-style oscillator crossings:
+        # e.g. oscillator[1] <= entry_threshold and oscillator > entry_threshold
+        # or   oscillator[1] <= -50 and oscillator > -110
+        expr_patterns = re.finditer(
+            r'(\w+)\s*\[\s*1\s*\]\s*<=\s*([-\w\.]+)\s*and\s*\1\s*>\s*([-\w\.]+)',
+            content,
+            re.IGNORECASE
         )
-        for match in entry_pattern:
-            prev_tok, curr_tok = match.group(2).strip(), match.group(3).strip()
-
-            if prev_tok == curr_tok:
-                # Plain threshold cross: osc leaves the zone below A
-                params.use_oscillator_entry = True
-                threshold = resolve(prev_tok)
-                if threshold is not None:
-                    if 'entry_threshold' in self._explicit_fields:
-                        # Input already fixed the primary threshold; a different
-                        # numeric level is an extreme-zone variant
-                        if threshold != params.entry_threshold:
-                            params.use_extreme_entry = True
-                            params.extreme_threshold = threshold
-                    else:
-                        params.entry_threshold = threshold
-            else:
-                prev_val, curr_val = resolve(prev_tok), resolve(curr_tok)
-                if prev_val is not None and curr_val is not None:
-                    params.use_oscillator_entry = True
-                    params.use_secondary_osc_entry = True
-                    params.secondary_prev_threshold = prev_val
-                    params.secondary_curr_threshold = curr_val
-
-        # --- Exit-style crossunder: osc[1] >= A and osc < A ---
-        exit_pattern = re.finditer(
-            rf'(\w+)\s*\[\s*1\s*\]\s*>=\s*({token})\s+and\s+\1\s*<\s*({token})',
-            content
-        )
-        for match in exit_pattern:
-            prev_tok, curr_tok = match.group(2).strip(), match.group(3).strip()
-            if prev_tok != curr_tok:
+        for match in expr_patterns:
+            series_name = match.group(1)
+            if 'osc' not in series_name.lower() and not params.use_oscillator_entry:
                 continue
-            threshold = resolve(prev_tok)
-            if threshold is not None and threshold > 50:
-                if 'use_ob_exit' not in self._explicit_fields:
+
+            prev_thr = self._resolve_numeric_token(match.group(2), params)
+            curr_thr = self._resolve_numeric_token(match.group(3), params)
+            if prev_thr is None or curr_thr is None:
+                continue
+
+            params.use_oscillator_entry = True
+            if abs(prev_thr - curr_thr) < 1e-9:
+                params.entry_threshold = prev_thr
+            else:
+                params.use_secondary_osc_entry = True
+                params.secondary_prev_threshold = prev_thr
+                params.secondary_curr_threshold = curr_thr
+
+        # Detect expression-style OB exits:
+        # e.g. oscillator[1] >= 100 and oscillator < 100
+        ob_expr = re.finditer(
+            r'(\w+)\s*\[\s*1\s*\]\s*>=\s*([-\w\.]+)\s*and\s*\1\s*<\s*([-\w\.]+)',
+            content,
+            re.IGNORECASE
+        )
+        ob_is_guarded = bool(re.search(r'\bif\s+use_ob_exit\b', content))
+        for match in ob_expr:
+            series_name = match.group(1)
+            if 'osc' not in series_name.lower() and not params.use_oscillator_entry:
+                continue
+            prev_thr = self._resolve_numeric_token(match.group(2), params)
+            curr_thr = self._resolve_numeric_token(match.group(3), params)
+            if prev_thr is None or curr_thr is None:
+                continue
+            if prev_thr > 50 and abs(prev_thr - curr_thr) < 1e-9:
+                params.ob_threshold = prev_thr
+                if not ob_is_guarded:
                     params.use_ob_exit = True
-                params.ob_threshold = threshold
 
     def _detect_consolidation_filter(self, params: StrategyParams) -> None:
         """Detect consolidation filter patterns."""
@@ -515,61 +728,108 @@ class PineScriptParser:
                 content, re.IGNORECASE | re.DOTALL
             )
 
+    def _detect_rsi_pullback_pattern(self, params: StrategyParams) -> None:
+        """
+        Detect RSI pullback crossover systems.
+
+        Typical shape:
+          longSignal  = trendUp and ta.crossover(rsiVal, rsiPull)
+          shortSignal = trendDn and ta.crossunder(rsiVal, rsiPullS)
+        """
+        content = self._clean_content
+
+        long_cross = re.search(
+            r'ta\.crossover\s*\(\s*(\w*rsi\w*)\s*,\s*([A-Za-z_]\w*|-?\d+(?:\.\d+)?)\s*\)',
+            content,
+            re.IGNORECASE,
+        )
+        short_cross = re.search(
+            r'ta\.crossunder\s*\(\s*(\w*rsi\w*)\s*,\s*([A-Za-z_]\w*|-?\d+(?:\.\d+)?)\s*\)',
+            content,
+            re.IGNORECASE,
+        )
+
+        if not long_cross and not short_cross:
+            return
+
+        params.use_rsi_pullback_entry = True
+        params.use_rsi_filter = True
+
+        if long_cross:
+            resolved_long = self._resolve_numeric_token(long_cross.group(2), params)
+            if resolved_long is not None:
+                params.rsi_pullback_long = float(resolved_long)
+
+        if short_cross:
+            resolved_short = self._resolve_numeric_token(short_cross.group(2), params)
+            if resolved_short is not None:
+                params.rsi_pullback_short = float(resolved_short)
+
+        # Trend checks based on dual EMA are typical in this pattern.
+        if re.search(r'ema\w*\s*[<>]\s*ema\w*', content, re.IGNORECASE):
+            params.use_ema_crossover = True
+
+    def _detect_directional_entries(self, params: StrategyParams) -> None:
+        """Detect long/short strategy.entry usage and reversal intent."""
+        content = self._clean_content
+
+        has_long_entry = bool(re.search(
+            r'strategy\.entry\s*\([^)]*strategy\.long',
+            content,
+            re.IGNORECASE | re.DOTALL,
+        ))
+        has_short_entry = bool(re.search(
+            r'strategy\.entry\s*\([^)]*strategy\.short',
+            content,
+            re.IGNORECASE | re.DOTALL,
+        ))
+
+        if has_short_entry:
+            params.enable_shorts = True
+            params.long_only = False
+
+        if has_long_entry and not has_short_entry:
+            params.long_only = True
+            params.short_only = False
+
+        if has_long_entry and has_short_entry:
+            params.allow_reversal = True
+        if re.search(r'strategy\.position_size\s*[<>]=?\s*0', content):
+            params.allow_reversal = True
+
     def _assign_param(self, params: StrategyParams, name: str, value: Any) -> None:
         """Assign parsed value to appropriate parameter field."""
         original_name = name
         # Normalize name
         norm = name.lower().replace('_', '').replace('-', '')
 
-        # --- Momentum EMAs (checked before the two-EMA system because names
-        # like momentum_ema_fast contain "emafast" and must not enable it) ---
-        if any(x in norm for x in ['momentumemafast', 'momentumfastlen', 'momentumfast', 'momfastlen']):
+        # --- Momentum (must be checked before EMA crossover aliases) ---
+        if any(x in norm for x in ['momentumconfirm', 'usemomentum']):
+            if isinstance(value, bool):
+                params.use_momentum_confirm = value
+                return
+        if any(x in norm for x in ['momentumfastlen', 'momentumfast', 'momfastlen', 'momentumemafast']):
             if isinstance(value, int):
                 params.momentum_ema_fast = value
                 return
-        if any(x in norm for x in ['momentumemaslow', 'momentumslowlen', 'momentumslow', 'momslowlen']):
+        if any(x in norm for x in ['momentumslowlen', 'momentumslow', 'momslowlen', 'momentumemaslow']):
             if isinstance(value, int):
                 params.momentum_ema_slow = value
                 return
 
         # --- Two-EMA system (emaFastLen / emaSlowLen) ---
-        if any(x in norm for x in ['emafastlen', 'emafastlength', 'fastema', 'emafast']):
-            if isinstance(value, int):
-                params.ema_fast_length = value
-                params.use_ema_crossover = True
-                return
-        if any(x in norm for x in ['emaslowlen', 'emaslowlength', 'slowema', 'emaslow']):
-            if isinstance(value, int):
-                params.ema_slow_length = value
-                params.use_ema_crossover = True
-                return
-
-        # --- Oscillator entry threshold ---
-        if norm in ('entrythreshold', 'entrylevel', 'entrythresh'):
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                params.entry_threshold = float(value)
-                self._explicit_fields.add('entry_threshold')
-                return
-
-        # --- Overbought / oversold exit toggles and levels ---
-        if norm in ('useobexit', 'obexit', 'useoverboughtexit'):
-            if isinstance(value, bool):
-                params.use_ob_exit = value
-                self._explicit_fields.add('use_ob_exit')
-                return
-        if norm in ('obthreshold', 'oblevel', 'overboughtthreshold', 'overboughtlevel'):
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                params.ob_threshold = float(value)
-                return
-        if norm in ('useosexit', 'osexit', 'useoversoldexit'):
-            if isinstance(value, bool):
-                params.use_os_exit = value
-                self._explicit_fields.add('use_os_exit')
-                return
-        if norm in ('osthreshold', 'oslevel', 'oversoldthreshold', 'oversoldlevel'):
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                params.os_threshold = float(value)
-                return
+        # Avoid matching momentum aliases like momentum_ema_fast.
+        if ('momentum' not in norm and 'mom' not in norm):
+            if any(x in norm for x in ['emafastlen', 'emafastlength', 'fastema', 'emafast', 'fastlen']):
+                if isinstance(value, int):
+                    params.ema_fast_length = value
+                    params.use_ema_crossover = True
+                    return
+            if any(x in norm for x in ['emaslowlen', 'emaslowlength', 'slowema', 'emaslow', 'slowlen']):
+                if isinstance(value, int):
+                    params.ema_slow_length = value
+                    params.use_ema_crossover = True
+                    return
 
         # --- RSI min/max range filter ---
         if norm in ('rsimin', 'rsiminimum', 'rsilower'):
@@ -582,14 +842,28 @@ class PineScriptParser:
                 params.rsi_max = float(value)
                 params.use_rsi_filter = True
                 return
+        if norm in ('rsipull', 'rsipullback', 'rsipullbacklong', 'rsipulllong'):
+            if isinstance(value, (int, float)):
+                params.rsi_pullback_long = float(value)
+                params.use_rsi_pullback_entry = True
+                params.use_rsi_filter = True
+                return
+        if norm in ('rsipulls', 'rsipullshort', 'rsipullbacks', 'rsipullbackshort'):
+            if isinstance(value, (int, float)):
+                params.rsi_pullback_short = float(value)
+                params.use_rsi_pullback_entry = True
+                params.use_rsi_filter = True
+                params.enable_shorts = True
+                params.long_only = False
+                return
 
         # --- ATR-based stop/TP multipliers ---
-        if any(x in norm for x in ['slmult', 'stopatrmult', 'slatrmult', 'stopmult']):
+        if any(x in norm for x in ['slmult', 'stopatrmult', 'slatrmult', 'stopmult', 'slatr']):
             if isinstance(value, (int, float)):
                 params.sl_atr_mult = float(value)
                 params.use_trailing_stop = False
                 return
-        if any(x in norm for x in ['tpmult', 'targetatrmult', 'tpatrmult', 'targetmult', 'takeprofitmult']):
+        if any(x in norm for x in ['tpmult', 'targetatrmult', 'tpatrmult', 'targetmult', 'takeprofitmult', 'tpatr']):
             if isinstance(value, (int, float)):
                 params.tp_atr_mult = float(value)
                 params.use_profit_target = True
@@ -632,6 +906,40 @@ class PineScriptParser:
                 params.use_profit_target = value
             return
 
+        # --- Exit toggles ---
+        if norm in ('useobexit', 'obexit', 'enableobexit'):
+            if isinstance(value, bool):
+                params.use_ob_exit = value
+                return
+        if norm in ('useosexit', 'osexit', 'enableosexit'):
+            if isinstance(value, bool):
+                params.use_os_exit = value
+                return
+        if norm in ('usestalerecycle', 'stalerecycle', 'enablestalerecycleexit'):
+            if isinstance(value, bool):
+                params.use_stale_recycle = value
+                return
+        if norm in ('stalerecyclebars', 'stalebars'):
+            if isinstance(value, int):
+                params.stale_recycle_bars = value
+                return
+        if norm in ('stalerecyclemin', 'stalerecycleminpnl', 'stalerecycleminpnlpct', 'staleminpnlpct'):
+            if isinstance(value, (int, float)):
+                params.stale_recycle_min_pnl_pct = float(value)
+                return
+        if norm in ('stalerecyclemax', 'stalerecyclemaxpnl', 'stalerecyclemaxpnlpct', 'stalemaxpnlpct'):
+            if isinstance(value, (int, float)):
+                params.stale_recycle_max_pnl_pct = float(value)
+                return
+        if norm in ('useemergencyexit', 'emergencyexit', 'enablemaxholdexit', 'usetimeexit'):
+            if isinstance(value, bool):
+                params.use_emergency_exit = value
+                return
+        if norm in ('maxholdbars', 'maxhold', 'maxtradebars'):
+            if isinstance(value, int):
+                params.max_hold_bars = value
+                return
+
         # --- Oscillator parameters ---
         if norm in ('oscemalen', 'oscillatoremalen', 'emalen21'):
             if isinstance(value, int):
@@ -650,6 +958,15 @@ class PineScriptParser:
         if norm in ('extremethreshold', 'extremelevel'):
             if isinstance(value, (int, float)):
                 params.extreme_threshold = float(value)
+                return
+        if norm in ('entrythreshold', 'entrylevel', 'threshold'):
+            if isinstance(value, (int, float)):
+                params.entry_threshold = float(value)
+                return
+        if norm in ('obthreshold', 'overboughtthreshold'):
+            if isinstance(value, (int, float)):
+                params.ob_threshold = float(value)
+                params.use_ob_exit = True
                 return
 
         # --- EMA filter ---
@@ -675,6 +992,10 @@ class PineScriptParser:
                 return
 
         # --- Consolidation filter ---
+        if any(x in norm for x in ['useconsolidationfilter', 'consolidationfilter', 'anticonsolidationfilter']):
+            if isinstance(value, bool):
+                params.use_consolidation_filter = value
+                return
         if any(x in norm for x in ['consolidationlookback', 'rangelookback']):
             if isinstance(value, int):
                 params.consolidation_lookback = value
@@ -727,12 +1048,6 @@ class PineScriptParser:
         if any(x in norm for x in ['atrmult', 'atrmultiplier']):
             if isinstance(value, (int, float)):
                 params.atr_multiplier = float(value)
-                return
-
-        # --- Momentum confirm toggle (fast/slow lengths handled above) ---
-        if any(x in norm for x in ['momentumconfirm', 'usemomentum']):
-            if isinstance(value, bool):
-                params.use_momentum_confirm = value
                 return
 
         # --- Order sizing ---
@@ -821,14 +1136,9 @@ class PineScriptParser:
             content, re.DOTALL
         ))
 
-        # Check for manual trailing stop logic in exit section.
-        # Matches comparisons with trail-stop variables on either side
-        # (low <= trailStopPrice, trail_stop >= close) and trailing-active
-        # state flags (trailingActive), which imply a manual trailing exit.
+        # Check for manual trailing stop logic in exit section
         has_manual_trail = bool(re.search(
-            r'(?:trail(?:ing)?_?(?:stop|sl)\w*\s*[<>=])'
-            r'|(?:[<>=]=?\s*trail(?:ing)?_?(?:stop|sl)\w*)'
-            r'|(?:\btrail(?:ing)?_?active\b)',
+            r'trail(?:ing)?(?:_?stop|_?sl)\s*[<>=]',
             content, re.IGNORECASE
         ))
 
@@ -864,13 +1174,24 @@ class PineScriptParser:
             params.dynamic_exits = True
             params.use_trailing_stop = False
 
+        # Detect close-driven trailing activation patterns such as:
+        # if currentPnL >= profit_target_pct
+        #     trailingActive := true
+        close_trail_activation = re.search(
+            r'if\s+current\w*pnl\w*\s*[><=!]+\s*[\w\.\-\+]+\s*\n\s*\w*trail\w*\s*:?\=\s*true',
+            content,
+            re.IGNORECASE,
+        )
+        if close_trail_activation:
+            params.trailing_activation_on_close = True
+
         # Check for percentage-based stop in strategy.close pattern
         # e.g., close <= entryPrice * (1 - stop_loss_pct / 100)
         pct_stop = re.search(
             r'close\s*[<>=]+\s*\w+\s*\*\s*\(\s*1\s*-\s*(\w+)\s*/\s*100',
             content
         )
-        if pct_stop:
+        if pct_stop and not has_exit:
             # Percentage-based stop with strategy.close = check every bar at close
             params.exit_type = "strategy_close"
 

@@ -4,387 +4,514 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wale Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+/* ── tokens: one identity with the landing page ─────────────────────────── */
+:root{
+  --ink:#0A0E12; --panel:#10161C; --panel2:#0D1319; --well:#0B1015;
+  --line:#1E2830; --hair:#16202A;
+  --paper:#E8EDF2; --dim:#A6B0BA; --faint:#78858F;
+  --bid:#2FD57C; --bid-dk:#17A45C; --ask:#FF5C5C; --amber:#FFB454; --blue:#6CB6FF;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --mono:'IBM Plex Mono','Cascadia Mono',Consolas,ui-monospace,monospace;
+  --sans:'Archivo','Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--ink);background-image:radial-gradient(1100px 640px at 78% -12%,rgba(34,48,62,.35),transparent 60%);background-attachment:fixed;color:var(--paper);font-family:var(--sans);font-size:14px;
+  line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden;
+  display:flex;flex-direction:column}
+::selection{background:var(--bid);color:var(--ink)}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--bid);outline-offset:2px;border-radius:4px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#223040;border-radius:5px;border:2px solid var(--ink)}
+::-webkit-scrollbar-thumb:hover{background:#2c3e52}
 
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+.mlabel{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+.mono{font-family:var(--mono)}
 
-  :root {
-    --bg-0: #09090b;
-    --bg-1: #0f0f12;
-    --bg-2: #18181b;
-    --bg-3: #1e1e23;
-    --bg-4: #27272a;
-    --border: #27272a;
-    --border-subtle: #1e1e23;
-    --text-0: #fafafa;
-    --text-1: #a1a1aa;
-    --text-2: #71717a;
-    --text-3: #52525b;
-    --blue: #3b82f6;
-    --blue-dim: rgba(59,130,246,0.12);
-    --green: #22c55e;
-    --green-dim: rgba(34,197,94,0.12);
-    --red: #ef4444;
-    --red-dim: rgba(239,68,68,0.12);
-    --amber: #f59e0b;
-    --amber-dim: rgba(245,158,11,0.12);
-    --purple: #a78bfa;
-    --sans: 'Inter', -apple-system, system-ui, sans-serif;
-    --mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
-    --radius: 8px;
-    --radius-lg: 12px;
-  }
+/* ── ticket bar (signature): DATA ▸ STRATEGY ▸ RUN ──────────────────────── */
+.ticket{display:flex;align-items:center;gap:14px;height:58px;padding:0 16px;
+  background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+  border-bottom:1px solid var(--line);flex:none}
+.brand{display:flex;align-items:center;gap:9px;margin-right:6px}
+.brand .bx{width:26px;height:26px;border-radius:6px;background:var(--bid-dk);border:1px solid var(--bid);
+  display:grid;place-items:center;font-weight:900;font-size:14px;color:#fff}
+.brand span{font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.14em}
+.stations{display:flex;align-items:center;gap:0;flex:1;min-width:0}
+.station{display:flex;align-items:center;gap:9px;padding:7px 12px;border:1px solid var(--line);
+  border-radius:8px;background:rgba(255,255,255,.02);cursor:pointer;min-width:0;max-width:300px;
+  transition:border-color .15s,background .15s;text-align:left;overflow:hidden}
+.station:hover{border-color:var(--faint)}
+.station .no{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--faint);flex:none}
+.station .st-body{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
+.station .st-name{font-family:var(--mono);font-size:12px;font-weight:600;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;color:var(--dim)}
+.station .st-sub{font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.station.done{border-color:rgba(47,213,124,.5);background:rgba(47,213,124,.05)}
+.station.done .st-name{color:var(--paper)}
+.station.done .no{color:var(--bid)}
+.station.active{border-color:rgba(255,180,84,.55);background:rgba(255,180,84,.05)}
+.station.active .st-name{color:var(--paper)}
+.station.active .no{color:var(--amber)}
+.st-state{width:16px;height:16px;border-radius:50%;flex:none;display:grid;place-items:center;
+  font-family:var(--mono);font-size:10px;font-weight:600;color:var(--ink);
+  border:1.5px solid var(--faint);background:transparent}
+.station.active .st-state{border-color:var(--amber)}
+.station.active .st-state::after{content:'';width:6px;height:6px;border-radius:50%;background:var(--amber)}
+.station.done .st-state{border-color:var(--bid);background:var(--bid)}
+.wire{width:26px;height:2px;background:var(--line);flex:none;position:relative}
+.wire::after{content:'';position:absolute;inset:0;background:var(--bid);transform:scaleX(0);
+  transform-origin:left;transition:transform .35s ease}
+.wire.hot::after{transform:scaleX(1)}
+.kbadge{font-family:var(--mono);font-size:9px;letter-spacing:.1em;padding:2px 6px;border-radius:4px;flex:none}
+.k-pine{background:rgba(255,180,84,.12);color:var(--amber)}
+.k-python{background:rgba(108,182,255,.12);color:var(--blue)}
+.k-builtin{background:rgba(138,153,168,.1);color:var(--dim)}
+.ticket-actions{display:flex;gap:9px;flex:none;align-items:center}
+.run-btn{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12.5px;font-weight:600;
+  padding:8px 20px;border-radius:7px;border:1px solid var(--bid);background:var(--bid);color:var(--ink);
+  transition:background .15s,border-color .15s}
+.run-btn:hover:not(:disabled){background:#4ae294}
+.run-btn:disabled{background:#151d19;border-color:var(--hair);color:#5E6E66;cursor:not-allowed}
+.ghost-btn{font-family:var(--mono);font-size:12px;padding:8px 14px;border-radius:7px;
+  border:1px solid #2E3C4A;color:#C9D3DC;transition:border-color .15s,color .15s}
+.ghost-btn:hover:not(:disabled){border-color:var(--bid-dk);color:var(--paper)}
+.ghost-btn:disabled{opacity:.4;border-color:var(--hair);color:var(--faint);cursor:not-allowed}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none;margin-left:4px}
+.live-dot.on{background:var(--bid);box-shadow:0 0 8px rgba(47,213,124,.7);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.5}}
 
-  body { background: var(--bg-0); color: var(--text-0); font-family: var(--sans); overflow: hidden; height: 100vh; }
+/* ── shell: rail + view ─────────────────────────────────────────────────── */
+.shell{display:flex;flex:1;min-height:0}
+.rail{width:150px;flex:none;border-right:1px solid var(--hair);background:var(--panel2);
+  display:flex;flex-direction:column;padding:16px 8px;gap:8px}
+.rail-btn{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:7px;
+  font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--dim);
+  transition:background .15s,color .15s;text-align:left;width:100%}
+.rail-btn svg{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6}
+.rail-btn:hover{color:var(--dim);background:rgba(255,255,255,.03)}
+.rail-btn.on{color:var(--bid);background:rgba(47,213,124,.08)}
+.rail-spacer{flex:1}
 
-  /* ── TITLEBAR ───────────────────────────────────────────── */
-  .titlebar {
-    display: flex; align-items: center; justify-content: space-between;
-    height: 48px; padding: 0 20px;
-    background: var(--bg-0); border-bottom: 1px solid var(--border);
-  }
-  .tb-left { display: flex; align-items: center; gap: 10px; }
-  .tb-logo {
-    width: 26px; height: 26px; border-radius: 6px;
-    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    display: grid; place-items: center;
-    font: 800 13px/1 var(--sans); color: #fff;
-  }
-  .tb-name { font-weight: 700; font-size: 14px; letter-spacing: -0.3px; }
-  .tb-sub { font-size: 11px; color: var(--text-2); margin-left: 2px; }
-  .tb-badge {
-    display: flex; align-items: center; gap: 6px;
-    padding: 3px 12px; border-radius: 100px;
-    font-size: 11px; font-weight: 600;
-    background: var(--bg-3); color: var(--text-2); border: 1px solid var(--border);
-    transition: all .25s;
-  }
-  .tb-badge.live { background: var(--green-dim); color: var(--green); border-color: rgba(34,197,94,.2); }
-  .tb-dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: currentColor; transition: background .25s;
-  }
-  .tb-badge.live .tb-dot { animation: blink 2s ease-in-out infinite; }
-  @keyframes blink { 50%{opacity:.3} }
+.view{flex:1;min-width:0;overflow-y:auto;padding:24px;display:none}
+.view.on{display:block}
 
-  /* ── LAYOUT ─────────────────────────────────────────────── */
-  .shell { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 48px - 28px); }
+/* ── shared furniture ───────────────────────────────────────────────────── */
+.card{background:var(--panel);border:1px solid var(--hair);border-radius:10px;padding:16px;margin-bottom:16px}
+.card-hd{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--faint);
+  text-transform:uppercase;margin-bottom:13px;display:flex;justify-content:space-between;align-items:center}
+.row{margin-bottom:16px}
+.row:last-child{margin-bottom:0}
+.row label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.field{width:100%;height:36px;background:var(--well);border:1px solid var(--line);border-radius:6px;
+  color:var(--paper);font-family:var(--mono);font-size:12.5px;padding:0 12px;transition:border-color .15s,box-shadow .15s}
+.field:focus{outline:none;border-color:var(--bid);box-shadow:0 0 0 3px rgba(47,213,124,.14)}
+.field::placeholder{color:#5A6874}
+select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2354626F'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;padding-right:26px}
+.btn{font-family:var(--mono);font-size:12px;font-weight:600;padding:8px 14px;border-radius:6px;
+  border:1px solid var(--line);color:var(--dim);transition:all .15s}
+.btn:hover:not(:disabled){border-color:var(--faint);color:var(--paper)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-go{background:var(--bid);border-color:var(--bid);color:var(--ink)}
+.btn-go:hover:not(:disabled){background:#4ae294;border-color:#4ae294;color:var(--ink)}
+.btn-danger:hover:not(:disabled){border-color:var(--ask);color:var(--ask)}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.note{font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--dim);margin-top:8px}
+.note.ok{color:var(--bid)}
+.note.err{color:var(--ask)}
+.note.warn{color:var(--amber)}
 
-  /* ── LEFT SIDEBAR ───────────────────────────────────────── */
-  .sidebar {
-    background: var(--bg-0); border-right: 1px solid var(--border);
-    padding: 12px; overflow-y: auto; overflow-x: hidden;
-    display: flex; flex-direction: column; gap: 10px;
-  }
-  .sidebar::-webkit-scrollbar { width: 4px; }
-  .sidebar::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
+/* view headers */
+.vhead{margin-bottom:24px}
+.vhead h1{font-family:var(--sans);font-stretch:115%;font-weight:800;font-size:22px;
+  letter-spacing:.01em;line-height:1.1}
+.vhead p{font-family:var(--mono);font-size:12.5px;color:var(--dim);margin-top:4px}
 
-  /* ── CARD ────────────────────────────────────────────────── */
-  .card {
-    background: var(--bg-1); border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg); padding: 14px;
-  }
-  .card-hd {
-    font-size: 10px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 1.2px; color: var(--text-3); margin-bottom: 12px;
-  }
+/* ── BACKTEST view ──────────────────────────────────────────────────────── */
+.bt-grid{display:grid;grid-template-columns:250px 1fr;gap:16px;align-items:start}
+.bt-grid>aside{position:sticky;top:0}
+.bt-grid>aside .card:last-child{margin-bottom:0}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);padding-top:8px;margin-bottom:16px}
+.tab{font-family:var(--mono);font-size:12px;letter-spacing:.06em;padding:10px 16px;color:var(--dim);
+  border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s}
+.tab:hover{color:var(--paper)}
+.tab.on{color:var(--bid);border-bottom-color:var(--bid)}
+.pane{display:none}
+.pane.on{display:block}
+.empty{min-height:52vh;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;padding:24px}
+.empty .steps-hint{display:block;text-align:left;font-family:var(--mono);font-size:12.5px;
+  color:var(--dim);line-height:2.5;margin-top:16px;background:var(--panel);
+  border:1px solid var(--hair);border-radius:10px;padding:16px 24px;width:100%;max-width:480px}
+.empty .steps-hint b{color:var(--bid);font-weight:600;margin-right:10px}
+.empty h3{font-family:var(--sans);font-stretch:112%;font-weight:700;
+  font-size:17px;color:#C9D3DC}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:16px}
+.mcard{background:var(--panel);border:1px solid var(--hair);border-radius:9px;padding:13px 15px}
+.mcard .ml{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+.mcard .mv{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:5px}
+.mcard .ms{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:2px}
+.pos{color:var(--bid)}.neg{color:var(--ask)}
+.tbl-wrap{background:var(--panel);border:1px solid var(--hair);border-radius:9px;padding:14px;overflow-x:auto}
+.tbl-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);text-align:right;padding:7px 10px;border-bottom:1px solid var(--line);font-weight:500}
+.tbl th:first-child{text-align:left}
+.tbl td{padding:7px 10px;border-bottom:1px solid var(--hair);text-align:right;font-family:var(--mono);font-size:11.5px}
+.tbl td:first-child{text-align:left}
+.tbl tr:last-child td{border-bottom:none}
+.chart-box{background:var(--panel);border:1px solid var(--hair);border-radius:9px;padding:16px;margin-bottom:16px}
+.chart-box canvas{width:100%;display:block}
+.err-banner{display:none;background:rgba(255,92,92,.08);border:1px solid rgba(255,92,92,.35);
+  border-radius:8px;padding:11px 14px;font-family:var(--mono);font-size:11.5px;color:var(--ask);
+  margin-bottom:14px;line-height:1.7}
+.err-banner.show{display:block}
 
-  /* ── FORM ────────────────────────────────────────────────── */
-  .row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
-  .row label { font-size: 11px; color: var(--text-1); min-width: 48px; font-weight: 500; flex-shrink: 0; }
-  .field {
-    width: 100%; min-width: 0;
-    background: var(--bg-2); border: 1px solid var(--border);
-    border-radius: 6px; padding: 6px 8px;
-    color: var(--text-0); font-family: var(--mono); font-size: 11px;
-    outline: none; transition: border-color .15s;
-  }
-  .field:focus { border-color: var(--blue); }
-  select.field {
-    appearance: none; -webkit-appearance: none; cursor: pointer;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2371717a'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 8px center; padding-right: 22px;
-  }
-  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
-  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px; }
-  .mini { display: flex; flex-direction: column; gap: 2px; }
-  .mini label { font-size: 9px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; min-width: 0; }
+/* optimizer card */
+.opt-result{font-family:var(--mono);font-size:11.5px;line-height:1.9;color:var(--dim);overflow-wrap:break-word}
+.opt-result b{color:var(--bid);font-weight:600}
+.pchips{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
+.pchip{font-family:var(--mono);font-size:10px;background:var(--well);border:1px solid var(--line);
+  border-radius:4px;padding:2px 7px;color:var(--dim)}
 
-  .btns { display: flex; gap: 6px; margin-top: 6px; }
-  .btn {
-    flex: 1; padding: 6px 10px; border-radius: 6px;
-    border: 1px solid var(--border); background: var(--bg-2);
-    color: var(--text-0); font: 600 11px/1.2 var(--sans);
-    cursor: pointer; transition: all .12s; text-align: center; white-space: nowrap;
-  }
-  .btn:hover { background: var(--bg-3); border-color: var(--text-3); }
-  .btn:disabled { opacity: .35; cursor: not-allowed; }
-  .btn-green { background: #166534; border-color: #15803d; color: #fff; }
-  .btn-green:hover { background: #15803d; }
+/* validation */
+.vstep{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--panel);
+  border:1px solid var(--hair);border-radius:9px;padding:13px 16px;margin-bottom:8px}
+.vstep-name{font-family:var(--mono);font-size:12px;font-weight:600}
+.vstep-det{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:2px;word-break:break-all}
+.badge{font-family:var(--mono);font-size:10px;letter-spacing:.1em;padding:4px 10px;border-radius:5px;flex:none;display:flex;align-items:center;gap:6px}
+.badge-wait{background:var(--well);color:var(--faint)}
+.badge-run{background:rgba(255,180,84,.1);color:var(--amber)}
+.badge-pass{background:rgba(47,213,124,.12);color:var(--bid)}
+.badge-fail{background:rgba(255,92,92,.12);color:var(--ask)}
+.spin{width:9px;height:9px;border:1.5px solid var(--amber);border-top-color:transparent;border-radius:50%;
+  display:inline-block;animation:rot .7s linear infinite}
+.spin-dark{border-color:var(--ink);border-top-color:transparent}
+@keyframes rot{to{transform:rotate(360deg)}}
+.vbox{border-radius:10px;padding:22px;text-align:center;margin-top:14px;border:1px solid var(--line)}
+.vbox .vl{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
+.vbox .vt{font-family:var(--sans);font-stretch:115%;font-weight:880;font-size:30px;text-transform:uppercase;margin:6px 0 2px}
+.vbox .vs{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.v-ok{border-color:rgba(47,213,124,.4);background:rgba(47,213,124,.05)}.v-ok .vt{color:var(--bid)}
+.v-bad{border-color:rgba(255,92,92,.4);background:rgba(255,92,92,.05)}.v-bad .vt{color:var(--ask)}
+.v-meh{border-color:rgba(255,180,84,.4);background:rgba(255,180,84,.05)}.v-meh .vt{color:var(--amber)}
 
-  .info {
-    font-size: 10px; color: var(--text-2); margin-top: 6px;
-    min-height: 14px; word-break: break-word;
-  }
-  .info.ok { color: var(--green); }
-  .info.err { color: var(--red); }
+/* ── STRATEGIES view ────────────────────────────────────────────────────── */
+.lib-toolbar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.scard{background:var(--panel);border:1px solid var(--hair);border-radius:10px;padding:16px;
+  display:flex;flex-direction:column;gap:10px;transition:border-color .15s;position:relative}
+.scard:hover{border-color:var(--line)}
+.scard.active{border-color:rgba(47,213,124,.5);background:linear-gradient(180deg,rgba(47,213,124,.05),var(--panel) 55%)}
+.scard-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.scard h3{font-family:var(--sans);font-stretch:112%;font-weight:800;font-size:15px;line-height:1.25}
+.scard .smod{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:3px;word-break:break-all}
+.scard-actions{display:flex;gap:7px;margin-top:auto;align-items:center}
+.arm-btn{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.06em;padding:7px 14px;
+  border-radius:6px;border:1px solid var(--bid-dk);color:var(--bid);transition:all .15s}
+.arm-btn:hover{background:rgba(47,213,124,.1)}
+.arm-btn.armed{background:var(--bid);color:var(--ink);border-color:var(--bid);cursor:default}
+.icon-btn{width:30px;height:30px;border:1px solid var(--line);border-radius:6px;display:grid;
+  place-items:center;color:var(--faint);transition:all .15s;flex:none}
+.icon-btn:hover{border-color:var(--faint);color:var(--paper)}
+.icon-btn.danger:hover{border-color:var(--ask);color:var(--ask)}
+.icon-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.7}
+.load-err{background:rgba(255,92,92,.06);border:1px solid rgba(255,92,92,.3);border-radius:8px;
+  padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--ask);margin-bottom:12px;line-height:1.8}
 
-  /* ── CODE EDITOR ─────────────────────────────────────────── */
-  .editor {
-    width: 100%; min-height: 100px; resize: vertical;
-    background: var(--bg-0); border: 1px solid var(--border);
-    border-radius: 6px; padding: 10px;
-    font: 400 11px/1.6 var(--mono); color: var(--text-1);
-    outline: none; transition: border-color .15s;
-  }
-  .editor:focus { border-color: var(--blue); color: var(--text-0); }
+/* editor workspace */
+.workspace{display:none}
+.workspace.on{display:block}
+.ws-grid{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+.editor{width:100%;min-height:56vh;background:var(--well);border:1px solid var(--line);border-radius:8px;
+  color:var(--paper);font-family:var(--mono);font-size:12.5px;line-height:1.7;padding:14px;resize:vertical;
+  tab-size:4;white-space:pre}
+.editor:focus{outline:none;border-color:var(--bid-dk)}
+.console{background:var(--panel);border:1px solid var(--hair);border-radius:9px;padding:14px;
+  max-height:56vh;overflow-y:auto}
+.cline{font-family:var(--mono);font-size:12px;line-height:1.7;padding:6px 0;border-bottom:1px solid var(--hair);color:var(--dim)}
+.cline:last-child{border-bottom:none}
+.cline.c-err{color:var(--ask)}
+.cline.c-warn{color:var(--amber)}
+.cline.c-ok{color:var(--bid)}
+.ws-actions{display:flex;gap:9px;margin-top:12px;align-items:center}
+.ed-tabs{display:flex;gap:2px;margin-bottom:12px}
+.ed-tab{font-family:var(--mono);font-size:12px;letter-spacing:.04em;padding:8px 16px;border-radius:6px 6px 0 0;
+  color:var(--dim);border:1px solid transparent;border-bottom:none}
+.ed-tab.on{color:var(--amber);background:var(--panel);border-color:var(--hair)}
+.ed-tab.on.py{color:var(--blue)}
 
-  /* ── RIGHT PANEL ─────────────────────────────────────────── */
-  .main { display: flex; flex-direction: column; overflow: hidden; background: var(--bg-0); }
+/* source viewer overlay */
+.overlay{position:fixed;inset:0;background:rgba(4,7,10,.7);backdrop-filter:blur(3px);z-index:90;
+  display:none;align-items:center;justify-content:center;padding:30px}
+.overlay.show{display:flex}
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(880px,94vw);
+  max-height:86vh;display:flex;flex-direction:column;overflow:hidden}
+.sheet-hd{display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)}
+.sheet-hd .t{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.08em}
+.sheet pre{flex:1;overflow:auto;padding:16px 18px;font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--dim)}
+.sheet .src-tabs{display:flex;gap:6px}
 
-  /* ── TABS ─────────────────────────────────────────────────── */
-  .tabs {
-    display: flex; gap: 0; border-bottom: 1px solid var(--border);
-    padding: 0 16px; background: var(--bg-0);
-  }
-  .tab {
-    padding: 11px 20px; font-size: 12px; font-weight: 600;
-    color: var(--text-3); cursor: pointer;
-    border-bottom: 2px solid transparent; transition: all .15s;
-    user-select: none;
-  }
-  .tab:hover { color: var(--text-1); }
-  .tab.on { color: var(--text-0); border-bottom-color: var(--blue); }
+/* ── DATA view ──────────────────────────────────────────────────────────── */
+.data-grid{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start}
+.seg{display:flex;gap:2px;background:var(--well);border:1px solid var(--line);border-radius:8px;padding:3px;margin-bottom:14px;width:max-content}
+.seg button{font-family:var(--mono);font-size:12px;letter-spacing:.03em;padding:8px 16px;border-radius:6px;color:var(--dim);transition:all .15s}
+.seg button:hover{color:var(--paper)}
+.seg button.on{background:var(--panel);color:var(--paper);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.src-pane{display:none}
+.src-pane.on{display:block}
+.ds-fact{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--hair);
+  font-family:var(--mono);font-size:11.5px}
+.ds-fact:last-child{border-bottom:none}
+.ds-fact .k{color:var(--faint)}
+.ds-fact .v{color:var(--paper);text-align:right;word-break:break-all}
 
-  .pane { flex: 1; overflow-y: auto; padding: 16px; display: none; }
-  .pane.on { display: block; }
-  .pane::-webkit-scrollbar { width: 4px; }
-  .pane::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 2px; }
+/* ── status bar + toast ─────────────────────────────────────────────────── */
+.sbar{height:30px;flex:none;border-top:1px solid var(--hair);background:var(--panel2);
+  display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+  font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.sbar #sbarL{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toasts{position:fixed;top:66px;right:16px;z-index:99;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--bid);border-radius:8px;
+  padding:10px 14px;font-family:var(--mono);font-size:11.5px;max-width:360px;box-shadow:0 8px 24px rgba(0,0,0,.5);
+  animation:tin .2s ease}
+.toast.t-err{border-left-color:var(--ask)}
+.toast.t-warn{border-left-color:var(--amber)}
+@keyframes tin{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}
 
-  /* ── METRICS GRID ────────────────────────────────────────── */
-  .mgrid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 16px; }
-  .mcard {
-    background: var(--bg-1); border: 1px solid var(--border-subtle);
-    border-radius: var(--radius); padding: 14px;
-    animation: rise .35s ease-out both;
-  }
-  .mcard:nth-child(1){animation-delay:.04s} .mcard:nth-child(2){animation-delay:.08s}
-  .mcard:nth-child(3){animation-delay:.12s} .mcard:nth-child(4){animation-delay:.16s}
-  .mcard:nth-child(5){animation-delay:.2s} .mcard:nth-child(6){animation-delay:.24s}
-  @keyframes rise { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-  .mcard .ml { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-3); margin-bottom: 6px; }
-  .mcard .mv { font: 700 22px/1 var(--mono); letter-spacing: -.5px; }
-  .mcard .mv.pos { color: var(--green); }
-  .mcard .mv.neg { color: var(--red); }
-  .mcard .ms { font-size: 10px; color: var(--text-3); margin-top: 4px; }
+/* ── finish pass: one radius scale, quiet depth, precise numerals, motion ── */
+.card,.scard,.mcard,.tbl-wrap,.chart-box,.vstep,.console,.vbox,
+.empty .steps-hint,.load-err,.err-banner{border-radius:12px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+.field,.btn,.run-btn,.ghost-btn,.arm-btn,.icon-btn,.editor{border-radius:8px}
+.seg{border-radius:10px}
+.seg button{border-radius:7px}
+.ed-tab{border-radius:8px 8px 0 0}
+.badge{border-radius:6px}
+.kbadge,.pchip{border-radius:5px}
+.toast{border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.55)}
+.sheet{border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.55)}
+.station{border-radius:10px}
 
-  /* ── TABLE ────────────────────────────────────────────────── */
-  .tbl-wrap {
-    background: var(--bg-1); border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg); padding: 14px; margin-bottom: 16px;
-  }
-  .tbl-hd { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-3); margin-bottom: 10px; }
-  table.tbl { width: 100%; border-collapse: collapse; }
-  .tbl tr { border-bottom: 1px solid var(--border-subtle); }
-  .tbl tr:last-child { border-bottom: none; }
-  .tbl td { padding: 8px 0; font-size: 12px; }
-  .tbl td:first-child { color: var(--text-1); font-weight: 500; }
-  .tbl td:last-child { text-align: right; font: 600 12px var(--mono); }
-  .tbl th { padding: 6px 0; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--text-3); text-align: left; border-bottom: 1px solid var(--border); }
-  .tbl th:nth-child(n+2) { text-align: right; }
+.btn,.run-btn,.ghost-btn,.arm-btn,.icon-btn,.seg button,.tab,.rail-btn,.station{
+  transition:all .18s var(--ease)}
+.btn:active:not(:disabled),.run-btn:active:not(:disabled),
+.ghost-btn:active:not(:disabled),.arm-btn:active:not(.armed),
+.icon-btn:active{transform:translateY(1px)}
+.field,.editor{caret-color:var(--bid)}
 
-  /* ── CHART ────────────────────────────────────────────────── */
-  .chart-box {
-    background: var(--bg-1); border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg); padding: 14px; margin-bottom: 10px;
-  }
-  .chart-box canvas { width: 100%; height: 260px; display: block; cursor: crosshair; }
+.tbl td,.mcard .mv,.ds-fact .v,.st-sub,.opt-result,.sbar,
+.vstep-det{font-variant-numeric:tabular-nums}
+.mcard .mv{letter-spacing:-.01em}
+.tbl tbody tr{transition:background .12s var(--ease)}
+.tbl tbody tr:hover td{background:rgba(255,255,255,.016)}
 
-  /* ── VALIDATION ──────────────────────────────────────────── */
-  .vstep {
-    background: var(--bg-1); border: 1px solid var(--border-subtle);
-    border-radius: var(--radius); padding: 14px 16px; margin-bottom: 8px;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .vstep-l { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-  .vstep-name { font-size: 12px; font-weight: 600; }
-  .vstep-det { font-size: 10px; color: var(--text-1); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .badge {
-    flex-shrink: 0; padding: 3px 12px; border-radius: 100px;
-    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
-    white-space: nowrap;
-  }
-  .badge-wait { background: var(--bg-3); color: var(--text-3); }
-  .badge-run { background: var(--blue-dim); color: var(--blue); }
-  .badge-pass { background: var(--green-dim); color: var(--green); }
-  .badge-fail { background: var(--red-dim); color: var(--red); }
+.rail-btn.on{box-shadow:inset 2px 0 0 var(--bid)}
+.wire.hot::after{box-shadow:0 0 8px rgba(47,213,124,.35)}
+.view.on{animation:viewin .18s var(--ease)}
+@keyframes viewin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes tout{to{opacity:0;transform:translateX(10px)}}
 
-  .vbox {
-    background: var(--bg-1); border: 2px solid var(--border);
-    border-radius: var(--radius-lg); padding: 20px; text-align: center; margin-top: 12px;
-  }
-  .vbox .vl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-3); margin-bottom: 6px; }
-  .vbox .vt { font: 800 26px/1 var(--sans); letter-spacing: -.5px; }
-  .vbox .vs { font-size: 12px; color: var(--text-1); margin-top: 6px; }
-  .vbox.v-ok { border-color: var(--green); }
-  .vbox.v-ok .vt { color: var(--green); }
-  .vbox.v-bad { border-color: var(--red); }
-  .vbox.v-bad .vt { color: var(--red); }
-  .vbox.v-meh { border-color: var(--amber); }
-  .vbox.v-meh .vt { color: var(--amber); }
-
-  /* ── ACTION BAR ──────────────────────────────────────────── */
-  .actions {
-    padding: 12px 16px; border-top: 1px solid var(--border);
-    display: flex; gap: 8px; background: var(--bg-0);
-  }
-  .act {
-    flex: 1; padding: 10px 16px; border-radius: var(--radius); border: none;
-    font: 700 13px/1 var(--sans); cursor: pointer; transition: all .15s;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-  }
-  .act:disabled { opacity: .35; cursor: not-allowed; }
-  .act-1 { background: linear-gradient(135deg,#166534,#15803d); color: #fff; box-shadow: 0 2px 10px rgba(22,101,52,.3); }
-  .act-1:hover:not(:disabled) { background: linear-gradient(135deg,#15803d,#22c55e); transform: translateY(-1px); }
-  .act-2 { background: linear-gradient(135deg,#1d4ed8,#3b82f6); color: #fff; box-shadow: 0 2px 10px rgba(59,130,246,.25); }
-  .act-2:hover:not(:disabled) { background: linear-gradient(135deg,#3b82f6,#60a5fa); transform: translateY(-1px); }
-  .act-3 { background: transparent; border: 1px solid var(--border); color: var(--text-1); }
-  .act-3:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
-
-  /* ── STATUS BAR ──────────────────────────────────────────── */
-  .sbar {
-    height: 28px; display: flex; align-items: center; justify-content: space-between;
-    padding: 0 16px; background: var(--bg-1); border-top: 1px solid var(--border);
-    font-size: 10px; color: var(--text-3);
-  }
-  .sbar-r { font-family: var(--mono); }
-
-  /* ── EMPTY STATE ─────────────────────────────────────────── */
-  .empty { text-align: center; padding: 50px 16px; }
-  .empty .ei { font-size: 36px; opacity: .15; margin-bottom: 12px; }
-  .empty h3 { font-size: 14px; color: var(--text-2); margin-bottom: 4px; }
-  .empty p { font-size: 12px; color: var(--text-3); }
-
-  /* ── SPINNER ─────────────────────────────────────────────── */
-  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--bg-4);
-    border-top-color: var(--blue); border-radius: 50%; animation: sp .5s linear infinite; vertical-align: middle; margin-right: 4px; }
-  @keyframes sp { to{transform:rotate(360deg)} }
-
-  .hide { display: none !important; }
-  input[type=file].hide { position: absolute; width: 0; height: 0; overflow: hidden; }
+@media (max-width:1080px){
+  .bt-grid,.data-grid,.ws-grid{grid-template-columns:1fr}
+  .rail{width:52px}
+  .rail-btn span,.rail-note{display:none}
+  .station{max-width:190px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
 </style>
 </head>
 <body>
 
-<!-- TITLEBAR -->
-<div class="titlebar">
-  <div class="tb-left">
-    <div class="tb-logo">W</div>
-    <span class="tb-name">Wale Backtest</span>
-    <span class="tb-sub">strategy validation engine</span>
+<!-- ═══ PIPELINE TICKET ═══ -->
+<header class="ticket">
+  <div class="brand"><span class="bx">W</span><span>WALE&nbsp;BACKTEST</span></div>
+  <div class="stations">
+    <button class="station active" id="stData" onclick="showView('data')" title="Go to data">
+      <span class="st-state" id="stDataState"></span>
+      <span class="no">01&nbsp;DATA</span>
+      <span class="st-body">
+        <span class="st-name" id="stDataName">No bars loaded</span>
+        <span class="st-sub" id="stDataSub">Fetch or upload bars first</span>
+      </span>
+    </button>
+    <div class="wire" id="wire1"></div>
+    <button class="station" id="stStrat" onclick="showView('strategies')" title="Go to strategy library">
+      <span class="st-state" id="stStratState"></span>
+      <span class="no">02&nbsp;STRATEGY</span>
+      <span class="st-body">
+        <span class="st-name" id="stStratName">Nothing loaded</span>
+        <span class="st-sub" id="stStratSub">Load one from the library</span>
+      </span>
+      <span class="kbadge" id="stStratKind" style="display:none"></span>
+    </button>
+    <div class="wire" id="wire2"></div>
   </div>
-  <div class="tb-badge" id="badge"><span class="tb-dot"></span><span id="badgeTxt">Ready</span></div>
-</div>
+  <div class="ticket-actions">
+    <button class="run-btn" id="btnBt" onclick="runBt()" disabled>&#9654;&nbsp;Run backtest</button>
+    <button class="ghost-btn" id="btnVal" onclick="runVal()" disabled>Validate</button>
+    <span class="live-dot" id="liveDot" title="engine status"></span>
+  </div>
+</header>
 
 <div class="shell">
-<!-- SIDEBAR -->
-<div class="sidebar">
+<!-- ═══ RAIL ═══ -->
+<nav class="rail">
+  <button class="rail-btn on" id="rb-backtest" onclick="showView('backtest')">
+    <svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 6-8M3 21h18"/></svg><span>Backtest</span>
+  </button>
+  <button class="rail-btn" id="rb-strategies" onclick="showView('strategies')">
+    <svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5"/></svg><span>Strategies</span>
+  </button>
+  <button class="rail-btn" id="rb-data" onclick="showView('data')">
+    <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.8"/><path d="M4 5.5v13c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-13M4 12c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8"/></svg><span>Data</span>
+  </button>
+  <div class="rail-spacer"></div>
+</nav>
 
-  <!-- DATA SOURCE -->
-  <div class="card">
-    <div class="card-hd">Data Source</div>
-    <div class="row">
-      <label>Source</label>
-      <select class="field" id="srcSelect" onchange="onSourceChange()">
-        <option value="yahoo">Yahoo Finance</option>
-        <option value="dukascopy">Dukascopy</option>
-        <option value="csv">CSV Upload</option>
-      </select>
+<!-- ═══ VIEW: BACKTEST ═══ -->
+<main class="view on" id="view-backtest">
+  <div class="vhead"><h1>Backtest</h1><p id="btSubtitle">Results appear here after a run</p></div>
+  <div class="err-banner" id="btErrBanner"></div>
+  <div class="bt-grid">
+    <aside>
+      <div class="card">
+        <div class="card-hd">Run settings</div>
+        <div class="row"><label>Commission (legacy engine only)</label><input class="field" id="commInput" value="0.001"></div>
+        <div class="note">Pine strategies use the commission declared in <span class="mono">strategy()</span>, exactly like TradingView.</div>
+      </div>
+      <div class="card">
+        <div class="card-hd">Validation settings</div>
+        <div class="grid2">
+          <div class="row"><label>Train yrs</label><input class="field" id="trainInput" value="4"></div>
+          <div class="row"><label>IS perms</label><input class="field" id="isPerms" value="200"></div>
+        </div>
+        <div class="row"><label>WF perms</label><input class="field" id="wfPerms" value="100"></div>
+      </div>
+      <div class="card">
+        <div class="card-hd">Optimizer <button class="btn" id="btnOpt" onclick="runOpt()" disabled>Search grid</button></div>
+        <div class="opt-result" id="optResult">Grid-searches the loaded strategy's parameters in-sample and reports the best profit factor.</div>
+        <div class="pchips" id="optChips"></div>
+        <div class="btns"><button class="btn btn-go" id="btnOptApply" onclick="runBtWithBest()" style="display:none">Run backtest with these</button></div>
+      </div>
+    </aside>
+    <section>
+      <div class="tabs">
+        <button class="tab on" data-tab="summary" onclick="tab('summary')">Summary</button>
+        <button class="tab" data-tab="trades" onclick="tab('trades')">Trades</button>
+        <button class="tab" data-tab="charts" onclick="tab('charts')">Charts</button>
+        <button class="tab" data-tab="validation" onclick="tab('validation')">Validation</button>
+      </div>
+
+      <div class="pane on" id="p-summary">
+        <div id="sumEmpty" class="empty">
+          <h3>No results yet</h3>
+          <div class="steps-hint">
+            <div><b>01</b> Load bars in <a href="#" onclick="showView('data');return false">Data</a></div>
+            <div><b>02</b> Load a strategy in the <a href="#" onclick="showView('strategies');return false">Library</a></div>
+            <div><b>03</b> Press <span class="mono" style="color:var(--bid)">&#9654; Run backtest</span> in the top bar</div>
+          </div>
+        </div>
+        <div id="sumContent" style="display:none">
+          <div class="mgrid" id="mgrid"></div>
+          <div class="tbl-wrap">
+            <div class="tbl-top"><span class="mlabel">Detailed metrics</span>
+              <button class="btn" onclick="downloadSummary()">Export CSV</button></div>
+            <table class="tbl" id="dtbl"><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane" id="p-trades">
+        <div id="trEmpty" class="empty"><h3>No trades yet</h3></div>
+        <div id="trContent" style="display:none">
+          <div class="tbl-wrap">
+            <div class="tbl-top"><span class="mlabel">Trade list (<span id="trCnt">0</span>)</span>
+              <span style="display:flex;gap:8px">
+                <button class="btn" onclick="document.getElementById('tvCmpFile').click()" title="Upload TradingView's 'List of trades' CSV (download icon above TV's trade table)">Compare to TV export</button>
+                <button class="btn" onclick="downloadTrades()">Export CSV</button>
+              </span></div>
+            <input type="file" id="tvCmpFile" style="display:none" accept=".csv" onchange="compareTv(this)">
+            <div id="tvCmpResult" style="display:none;margin-bottom:12px">
+              <div class="note" id="tvCmpSummary" style="margin:0 0 8px"></div>
+              <table class="tbl" id="tvCmpTbl"><thead><tr><th>TV entry</th><th>Engine entry</th><th>TV exit</th><th>Engine exit</th><th>Entry $ Δ</th><th>Verdict</th></tr></thead><tbody></tbody></table>
+            </div>
+            <table class="tbl" id="trTbl"><thead><tr><th>#</th><th>Dir</th><th>Entry date</th><th>Entry $</th><th>Exit date</th><th>Exit $</th><th>Bars</th><th>P&amp;L</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane" id="p-charts">
+        <div id="chEmpty" class="empty"><h3>No charts yet</h3></div>
+        <div id="chContent" style="display:none">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+            <button class="btn" onclick="downloadChartData()">Export chart CSV</button>
+          </div>
+          <div class="chart-box"><span class="mlabel" id="eqTitle">Equity curve</span><canvas id="eqCanvas" height="260"></canvas></div>
+          <div class="chart-box"><span class="mlabel" id="ddTitle">Drawdown</span><canvas id="ddCanvas" height="260"></canvas></div>
+        </div>
+      </div>
+
+      <div class="pane" id="p-validation">
+        <div id="valEmpty" class="empty"><h3>No validation yet</h3>
+          <div class="steps-hint">Press <span class="mono" style="color:var(--dim)">Validate</span> in the top bar to run the 4-step statistical trial.</div>
+        </div>
+        <div id="valContent" style="display:none">
+          <div class="vstep"><div><div class="vstep-name">Step 1 — In-sample optimization</div><div class="vstep-det" id="vd1">Waiting</div></div><span class="badge badge-wait" id="vb1">Pending</span></div>
+          <div class="vstep"><div><div class="vstep-name">Step 2 — IS permutation test</div><div class="vstep-det" id="vd2">Waiting</div></div><span class="badge badge-wait" id="vb2">Pending</span></div>
+          <div class="vstep"><div><div class="vstep-name">Step 3 — Walk-forward out-of-sample</div><div class="vstep-det" id="vd3">Waiting</div></div><span class="badge badge-wait" id="vb3">Pending</span></div>
+          <div class="vstep"><div><div class="vstep-name">Step 4 — WF permutation test</div><div class="vstep-det" id="vd4">Waiting</div></div><span class="badge badge-wait" id="vb4">Pending</span></div>
+          <div class="vbox" id="vbox" style="display:none"><div class="vl">Final verdict</div><div class="vt" id="vtext"></div><div class="vs" id="vsub"></div></div>
+          <div style="margin-top:10px;display:flex;justify-content:flex-end">
+            <button class="btn" id="btnDlVal" onclick="downloadValidation()" style="display:none">Export JSON</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- ═══ VIEW: STRATEGIES ═══ -->
+<main class="view" id="view-strategies">
+  <div class="vhead"><h1>Strategy library</h1><p>Load a strategy to make it the one the backtest runs — no ambiguity, ever</p></div>
+
+  <div id="libHome">
+    <div class="lib-toolbar">
+      <button class="btn btn-go" onclick="openWorkspace('pine')">+ New from Pine Script</button>
+      <button class="btn" onclick="openWorkspace('python')">+ New Python strategy</button>
     </div>
-
-    <!-- Yahoo fields -->
-    <div id="yahooFields">
-      <div class="row">
-        <label>Symbol</label>
-        <input class="field" id="symInput" placeholder="e.g. QQQ, SPY, AAPL, BTC-USD">
-      </div>
-      <div id="symInfo" class="info hide"></div>
-      <div class="row2">
-        <div class="mini"><label>Interval</label>
-          <select class="field" id="intSelect">
-            <option value="1h">1H</option><option value="1d" selected>1D</option><option value="1wk">1W</option>
-          </select>
-        </div>
-        <div class="mini"><label>Start</label>
-          <input class="field" id="startInput" placeholder="auto (max)">
-        </div>
-      </div>
-      <div class="btns">
-        <button class="btn" onclick="lookupTicker()">Lookup</button>
-        <button class="btn btn-green" onclick="fetchYahoo()">Fetch</button>
-      </div>
-    </div>
-
-    <!-- Dukascopy fields -->
-    <div id="dukaFields" class="hide">
-      <div class="row">
-        <label>Pair</label>
-        <input class="field" id="dukaSym" placeholder="e.g. EUR-USD, GBP-USD">
-      </div>
-      <div class="row3">
-        <div class="mini"><label>Start</label>
-          <input class="field" id="dukaStart" placeholder="dd-mm-yyyy">
-        </div>
-        <div class="mini"><label>End</label>
-          <input class="field" id="dukaEnd" placeholder="dd-mm-yyyy">
-        </div>
-        <div class="mini"><label>Resample</label>
-          <select class="field" id="dukaRes">
-            <option value="1min">1min</option><option value="5min">5min</option>
-            <option value="15min">15min</option><option value="1h" selected>1H</option>
-            <option value="4h">4H</option><option value="1d">1D</option>
-          </select>
-        </div>
-      </div>
-      <div class="btns">
-        <button class="btn btn-green" onclick="fetchDuka()">Fetch Dukascopy</button>
-      </div>
-    </div>
-
-    <!-- CSV upload -->
-    <div id="csvFields" class="hide">
-      <div class="btns">
-        <button class="btn btn-green" onclick="document.getElementById('csvFile').click()">Choose CSV File</button>
-      </div>
-      <input type="file" id="csvFile" class="hide" accept=".csv,.tsv,.txt" onchange="uploadCSV(this)">
-    </div>
-
-    <div class="info" id="dataInfo"></div>
+    <div id="libErrors"></div>
+    <div class="lib-grid" id="libGrid"></div>
   </div>
 
-  <!-- STRATEGY -->
-  <div class="card">
-    <div class="card-hd">Strategy</div>
-    <div class="row">
-      <label>Select</label>
-      <select class="field" id="stratSel" onchange="currentStrat=this.value"></select>
+  <div class="workspace" id="wsEditor">
+    <div class="ed-tabs">
+      <button class="ed-tab on" id="edTabPine" onclick="wsMode('pine')">Pine Script</button>
+      <button class="ed-tab" id="edTabPy" onclick="wsMode('python')">Python</button>
     </div>
-    <div class="btns" style="margin-bottom:8px">
-      <button class="btn" id="btnPineTab" onclick="showEditorTab('pine')" style="opacity:.6">Pine Editor</button>
-      <button class="btn" id="btnPyTab" onclick="showEditorTab('python')" style="opacity:.6">Python Editor</button>
-      <button class="btn" onclick="translatePine()">Translate</button>
-    </div>
-    <div id="pineWrap" class="hide">
-      <textarea class="editor" id="pineCode" spellcheck="false" placeholder="Paste PineScript here..."></textarea>
-      <div class="info" id="pineInfo"></div>
-    </div>
-    <div id="pyWrap" class="hide">
-      <div class="row">
-        <label>Name</label>
-        <input class="field" id="pyName" placeholder="my_strategy" value="custom_strategy">
-      </div>
-      <textarea class="editor" id="pyCode" spellcheck="false" style="min-height:160px">import numpy as np
+    <div class="ws-grid">
+      <div>
+        <div id="wsPine">
+          <textarea class="editor" id="pineCode" spellcheck="false" placeholder="//@version=6&#10;strategy(&quot;My Strategy&quot;, overlay=true)&#10;&#10;// paste your TradingView Pine Script here"></textarea>
+        </div>
+        <div id="wsPy" style="display:none">
+          <div class="row" style="max-width:320px"><label>Module name</label>
+            <input class="field" id="pyName" placeholder="my_strategy" value="custom_strategy"></div>
+          <textarea class="editor" id="pyCode" spellcheck="false">import numpy as np
 import pandas as pd
 from src.strategies.base import BaseStrategy
 
@@ -408,604 +535,895 @@ class CustomStrategy(BaseStrategy):
     def param_grid(self):
         return {'fast': [5, 10, 20], 'slow': [20, 30, 50]}
 </textarea>
-      <div class="btns" style="margin-top:6px">
-        <button class="btn btn-green" onclick="savePyStrategy()">Save &amp; Register</button>
-      </div>
-      <div class="info" id="pyInfo"></div>
-    </div>
-  </div>
-
-  <!-- SETTINGS -->
-  <div class="card">
-    <div class="card-hd">Settings</div>
-    <div class="row2">
-      <div class="mini"><label>Commission</label><input class="field" id="commInput" value="0.001"></div>
-      <div class="mini"><label>Train Yrs</label><input class="field" id="trainInput" value="4"></div>
-    </div>
-    <div class="row2">
-      <div class="mini"><label>IS Perms</label><input class="field" id="isPerms" value="200"></div>
-      <div class="mini"><label>WF Perms</label><input class="field" id="wfPerms" value="100"></div>
-    </div>
-  </div>
-</div>
-
-<!-- MAIN PANEL -->
-<div class="main">
-  <div class="tabs">
-    <div class="tab on" onclick="tab('summary')">Summary</div>
-    <div class="tab" onclick="tab('trades')">Trades</div>
-    <div class="tab" onclick="tab('charts')">Charts</div>
-    <div class="tab" onclick="tab('validation')">Validation</div>
-  </div>
-
-  <!-- SUMMARY -->
-  <div class="pane on" id="p-summary">
-    <div id="sumEmpty" class="empty"><div class="ei">&#8942;</div><h3>No results yet</h3><p>Load data and run a backtest</p></div>
-    <div id="sumContent" class="hide">
-      <div class="mgrid" id="mgrid"></div>
-      <div class="tbl-wrap">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="tbl-hd" style="margin-bottom:0">Detailed Metrics</div>
-          <button class="btn" onclick="downloadSummary()" style="flex:none;padding:4px 10px">Export CSV</button>
         </div>
-        <table class="tbl" id="dtbl"><tbody></tbody></table>
-      </div>
-    </div>
-  </div>
-
-  <!-- TRADES -->
-  <div class="pane" id="p-trades">
-    <div id="trEmpty" class="empty"><div class="ei">&#8942;</div><h3>No trades yet</h3><p>Run a backtest first</p></div>
-    <div id="trContent" class="hide">
-      <div class="tbl-wrap">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div class="tbl-hd" style="margin-bottom:0">Trade List (<span id="trCnt">0</span> trades)</div>
-          <button class="btn" onclick="downloadTrades()" style="flex:none;padding:4px 10px">Export CSV</button>
+        <div class="ws-actions">
+          <button class="btn btn-go" id="wsGo" onclick="translatePine()">Translate &amp; load</button>
+          <button class="btn" onclick="closeWorkspace()">Back to library</button>
+          <span class="note" id="wsHint">Translation compiles your Pine into a runnable Python strategy and loads it.</span>
         </div>
-        <table class="tbl" id="trTbl"><thead><tr><th>#</th><th>Dir</th><th>Entry Date</th><th>Entry $</th><th>Exit Date</th><th>Exit $</th><th>Bars</th><th>P&L</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="console" id="wsConsole">
+        <div class="mlabel" style="margin-bottom:8px">Translator console</div>
+        <div class="cline">Ready. Anything the translator can't honor is listed here — never silently dropped.</div>
       </div>
     </div>
   </div>
+</main>
 
-  <!-- CHARTS -->
-  <div class="pane" id="p-charts">
-    <div id="chEmpty" class="empty"><div class="ei">&#8942;</div><h3>No charts yet</h3><p>Run a backtest first</p></div>
-    <div id="chContent" class="hide">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-        <button class="btn" onclick="downloadChartData()" style="flex:none;padding:4px 10px">Export Chart CSV</button>
+<!-- ═══ VIEW: DATA ═══ -->
+<main class="view" id="view-data">
+  <div class="vhead"><h1>Data</h1><p>Bars feed the broker emulator — match the adjustment to your TradingView chart for 1:1 prices</p></div>
+  <div class="data-grid">
+    <section>
+      <div class="seg" role="tablist">
+        <button class="on" id="seg-alpaca" onclick="showSource('alpaca')">Alpaca</button>
+        <button id="seg-yahoo" onclick="showSource('yahoo')">Yahoo</button>
+        <button id="seg-dukascopy" onclick="showSource('dukascopy')">Dukascopy</button>
+        <button id="seg-csv" onclick="showSource('csv')">CSV</button>
       </div>
-      <div class="chart-box"><div class="tbl-hd" id="eqTitle">Equity Curve</div><canvas id="eqCanvas" height="260"></canvas></div>
-      <div class="chart-box"><div class="tbl-hd" id="ddTitle">Drawdown</div><canvas id="ddCanvas" height="260"></canvas></div>
-    </div>
-  </div>
 
-  <!-- VALIDATION -->
-  <div class="pane" id="p-validation">
-    <div id="valEmpty" class="empty"><div class="ei">&#8942;</div><h3>No validation yet</h3><p>Click "4-Step Validation" to begin</p></div>
-    <div id="valContent" class="hide">
-      <div class="vstep"><div class="vstep-l"><div class="vstep-name">Step 1: In-Sample Optimization</div><div class="vstep-det" id="vd1">Waiting</div></div><div class="badge badge-wait" id="vb1">Pending</div></div>
-      <div class="vstep"><div class="vstep-l"><div class="vstep-name">Step 2: IS Permutation Test</div><div class="vstep-det" id="vd2">Waiting</div></div><div class="badge badge-wait" id="vb2">Pending</div></div>
-      <div class="vstep"><div class="vstep-l"><div class="vstep-name">Step 3: Walk-Forward OOS</div><div class="vstep-det" id="vd3">Waiting</div></div><div class="badge badge-wait" id="vb3">Pending</div></div>
-      <div class="vstep"><div class="vstep-l"><div class="vstep-name">Step 4: WF Permutation Test</div><div class="vstep-det" id="vd4">Waiting</div></div><div class="badge badge-wait" id="vb4">Pending</div></div>
-      <div class="vbox hide" id="vbox"><div class="vl">Final Verdict</div><div class="vt" id="vtext"></div><div class="vs" id="vsub"></div></div>
-      <div style="margin-top:10px;display:flex;justify-content:flex-end">
-        <button class="btn" id="btnDlVal" onclick="downloadValidation()" style="flex:none;padding:4px 10px;display:none">Export Validation JSON</button>
+      <!-- Alpaca -->
+      <div class="src-pane on" id="src-alpaca">
+        <div class="card">
+          <div class="card-hd">Alpaca — free live IEX feed</div>
+          <div class="note" id="alpacaTrial" style="margin:0 0 10px"></div>
+          <div id="alpacaKeyBox">
+            <div class="grid2">
+              <div class="row"><label>API key ID</label><input class="field" id="alpKeyId" placeholder="PK..." autocomplete="off"></div>
+              <div class="row"><label>API secret</label><input class="field" id="alpSecret" type="password" placeholder="secret" autocomplete="off"></div>
+            </div>
+            <div class="btns">
+              <button class="btn" onclick="saveAlpacaKeys()">Save keys</button>
+              <button class="btn" id="btnAlpReveal" onclick="revealKeyFile()" style="display:none" title="Opens the folder — the file itself holds your key ID and secret">Show key file</button>
+              <button class="btn" id="btnAlpCopyPath" onclick="copyKeyPath()" style="display:none">Copy file path</button>
+              <button class="btn btn-danger" id="btnAlpClear" onclick="clearAlpacaKeys()" style="display:none">Remove keys</button>
+            </div>
+            <div class="note" id="alpKeyInfo">Free keys at alpaca.markets &rarr; paper account &rarr; API keys. Stored locally, never bundled.</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd">Fetch bars</div>
+          <div class="row"><label>Symbol</label><input class="field" id="alpSym" placeholder="AAPL, SPY, NDAQ, SCHD..."></div>
+          <div class="grid3">
+            <div class="row"><label>Timeframe</label>
+              <select class="field" id="alpTf">
+                <option value="1min">1min</option><option value="5min">5min</option>
+                <option value="15min">15min</option><option value="30min">30min</option>
+                <option value="1h">1H</option><option value="1d" selected>1D</option>
+              </select></div>
+            <div class="row"><label>Start</label><input class="field" id="alpStart" placeholder="YYYY-MM-DD"></div>
+            <div class="row"><label>End</label><input class="field" id="alpEnd" placeholder="auto (now)"></div>
+          </div>
+          <div class="row"><label>Adjustment — match your TV chart</label>
+            <select class="field" id="alpAdj">
+              <option value="split" selected>Splits only (TV default)</option>
+              <option value="all">Splits + dividends (TV "adj" on)</option>
+            </select></div>
+          <div class="btns"><button class="btn btn-go" onclick="fetchAlpaca()">Fetch bars</button></div>
+        </div>
+      </div>
+
+      <!-- Yahoo -->
+      <div class="src-pane" id="src-yahoo">
+        <div class="card">
+          <div class="card-hd">Yahoo Finance</div>
+          <div class="row"><label>Symbol</label><input class="field" id="symInput" placeholder="QQQ, SPY, AAPL, BTC-USD..."></div>
+          <div class="note" id="symInfo" style="display:none"></div>
+          <div class="grid2">
+            <div class="row"><label>Interval</label>
+              <select class="field" id="intSelect"><option value="1h">1H</option><option value="1d" selected>1D</option><option value="1wk">1W</option></select></div>
+            <div class="row"><label>Start</label><input class="field" id="startInput" placeholder="auto (max)"></div>
+          </div>
+          <div class="btns">
+            <button class="btn" onclick="lookupTicker()">Look up</button>
+            <button class="btn btn-go" onclick="fetchYahoo()">Fetch bars</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dukascopy -->
+      <div class="src-pane" id="src-dukascopy">
+        <div class="card">
+          <div class="card-hd">Dukascopy — FX ticks</div>
+          <div class="row"><label>Pair</label><input class="field" id="dukaSym" placeholder="EUR-USD, GBP-USD..."></div>
+          <div class="grid3">
+            <div class="row"><label>Start</label><input class="field" id="dukaStart" placeholder="dd-mm-yyyy"></div>
+            <div class="row"><label>End</label><input class="field" id="dukaEnd" placeholder="dd-mm-yyyy"></div>
+            <div class="row"><label>Resample</label>
+              <select class="field" id="dukaRes">
+                <option value="1min">1min</option><option value="5min">5min</option>
+                <option value="15min">15min</option><option value="1h" selected>1H</option>
+                <option value="4h">4H</option><option value="1d">1D</option>
+              </select></div>
+          </div>
+          <div class="btns"><button class="btn btn-go" onclick="fetchDuka()">Fetch bars</button></div>
+        </div>
+      </div>
+
+      <!-- CSV -->
+      <div class="src-pane" id="src-csv">
+        <div class="card">
+          <div class="card-hd">Bring your own CSV</div>
+          <div class="note" style="margin:0 0 12px">TradingView exports, Databento dumps, broker files — columns and delimiters are auto-detected. For exact 1:1 TradingView trade lists, export your TV chart data and load it here.</div>
+          <div class="btns"><button class="btn btn-go" onclick="document.getElementById('csvFile').click()">Choose CSV file</button></div>
+          <input type="file" id="csvFile" style="display:none" accept=".csv,.tsv,.txt" onchange="uploadCSV(this)">
+        </div>
+      </div>
+      <div class="note" id="dataInfo"></div>
+    </section>
+
+    <aside>
+      <div class="card">
+        <div class="card-hd">Loaded dataset</div>
+        <div id="dsEmpty" class="note" style="margin:0">Nothing loaded yet. Fetch bars from a source on the left.</div>
+        <div id="dsFacts" style="display:none">
+          <div class="ds-fact"><span class="k">SOURCE</span><span class="v" id="dsSource">—</span></div>
+          <div class="ds-fact"><span class="k">BARS</span><span class="v" id="dsBars">—</span></div>
+          <div class="ds-fact"><span class="k">FROM</span><span class="v" id="dsStart">—</span></div>
+          <div class="ds-fact"><span class="k">TO</span><span class="v" id="dsEnd">—</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</main>
+</div>
+
+<!-- ═══ SOURCE VIEWER ═══ -->
+<div class="overlay" id="srcOverlay" onclick="if(event.target===this)closeSource()">
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-hd">
+      <span class="t" id="srcTitle">source</span>
+      <div class="src-tabs">
+        <button class="btn" id="srcTabPy" onclick="srcShow('py')">Python</button>
+        <button class="btn" id="srcTabPine" onclick="srcShow('pine')" style="display:none">Pine</button>
+        <button class="btn" onclick="closeSource()">Close</button>
       </div>
     </div>
-  </div>
-
-  <!-- ACTIONS -->
-  <div class="actions">
-    <button class="act act-1" id="btnBt" onclick="runBt()">Run Backtest</button>
-    <button class="act act-2" id="btnVal" onclick="runVal()">4-Step Validation</button>
-    <button class="act act-3" id="btnOpt" onclick="runOpt()">Optimize</button>
+    <pre id="srcBody"></pre>
   </div>
 </div>
-</div>
 
-<!-- STATUS BAR -->
-<div class="sbar">
+<div class="toasts" id="toasts"></div>
+
+<!-- ═══ STATUS BAR ═══ -->
+<footer class="sbar">
   <span id="sbarL">Ready</span>
-  <span class="sbar-r">Wale Backtest v1.0</span>
-</div>
+  <span>Fills at next bar open &nbsp;·&nbsp; stops intrabar &nbsp;·&nbsp; v2.2.2</span>
+</footer>
 
 <script>
-let currentStrat='';
-let pollId=null;
+'use strict';
+// ── app state ────────────────────────────────────────────────────────────────
+const S = {
+  data: null,               // {bars, source, start, end}
+  strategies: [],
+  active: null,             // armed strategy module name
+  lastTranslated: null, pineDirty: false,
+  bestParams: null,
+  results: null, chartData: null, valData: null,
+};
+let pollId = null;
 
-// ── INIT ──
-document.addEventListener('DOMContentLoaded', async()=>{
-  await loadStrats();
-  await checkData();
+document.addEventListener('DOMContentLoaded', async () => {
+  await Promise.all([loadLibrary(), checkData(), loadAlpacaStatus()]);
+  document.getElementById('pineCode').addEventListener('input', () => { S.pineDirty = true; });
+  refreshTicket();
+  const h = location.hash.replace('#', '');
+  if (['backtest', 'strategies', 'data'].includes(h)) showView(h);
+  if (h === 'editor'){ showView('strategies'); openWorkspace('pine'); }
 });
 
-// ── TABS ──
+// ── views ────────────────────────────────────────────────────────────────────
+function showView(v){
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('on'));
+  document.querySelectorAll('.rail-btn').forEach(el => el.classList.remove('on'));
+  document.getElementById('view-' + v).classList.add('on');
+  document.getElementById('rb-' + v).classList.add('on');
+  if (v === 'backtest') requestAnimationFrame(_tryDrawCharts);
+}
 function tab(id){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
-  document.querySelector(`.tab:nth-child(${['summary','trades','charts','validation'].indexOf(id)+1})`).classList.add('on');
-  document.getElementById('p-'+id).classList.add('on');
-  // Redraw charts when Charts tab becomes visible
-  if(id==='charts') requestAnimationFrame(()=>_tryDrawCharts());
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === id));
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
+  document.getElementById('p-' + id).classList.add('on');
+  if (id === 'charts') requestAnimationFrame(_tryDrawCharts);
 }
 
-// ── STATUS ──
-function status(t,live){
-  const b=document.getElementById('badge');
-  document.getElementById('badgeTxt').textContent=t;
-  document.getElementById('sbarL').textContent=t;
-  b.classList.toggle('live',!!live);
-}
-function dinfo(t,ok){
-  const el=document.getElementById('dataInfo');
-  el.textContent=t; el.className='info '+(ok?'ok':'err');
+// ── pipeline ticket ──────────────────────────────────────────────────────────
+function refreshTicket(){
+  const dataOk = !!S.data, strat = S.strategies.find(s => s.name === S.active) || null;
+  const st1 = document.getElementById('stData');
+  st1.classList.toggle('done', dataOk);
+  st1.classList.toggle('active', !dataOk);
+  document.getElementById('stDataState').textContent = dataOk ? '\u2713' : '';
+  document.getElementById('stDataName').textContent = dataOk ? S.data.source : 'No bars loaded';
+  document.getElementById('stDataSub').textContent = dataOk
+    ? S.data.bars + ' bars · ' + (S.data.start||'').slice(0,10) + ' → ' + (S.data.end||'').slice(0,10)
+    : 'Fetch or upload bars first';
+  document.getElementById('wire1').classList.toggle('hot', dataOk);
+
+  const st2 = document.getElementById('stStrat');
+  st2.classList.toggle('done', !!strat);
+  st2.classList.toggle('active', dataOk && !strat);
+  document.getElementById('stStratState').textContent = strat ? '\u2713' : '';
+  document.getElementById('stStratName').textContent = strat ? strat.display : 'Nothing loaded';
+  document.getElementById('stStratSub').textContent = strat ? strat.class : 'Load one from the library';
+  const kb = document.getElementById('stStratKind');
+  if (strat){
+    kb.style.display = '';
+    kb.textContent = strat.builtin ? 'BUILT-IN' : strat.kind.toUpperCase();
+    kb.className = 'kbadge ' + (strat.builtin ? 'k-builtin' : (strat.kind === 'pine' ? 'k-pine' : 'k-python'));
+  } else kb.style.display = 'none';
+  document.getElementById('wire2').classList.toggle('hot', dataOk && !!strat);
+
+  const ready = dataOk && !!strat;
+  document.getElementById('btnBt').disabled = !ready;
+  document.getElementById('btnVal').disabled = !ready;
+  document.getElementById('btnOpt').disabled = !ready;
+  document.getElementById('btSubtitle').textContent = strat
+    ? 'Loaded: ' + strat.display + ' (' + strat.class + ')'
+    : 'Results appear here after a run';
 }
 
-// ── DATA SOURCE TOGGLE ──
-function onSourceChange(){
-  const v=document.getElementById('srcSelect').value;
-  document.getElementById('yahooFields').classList.toggle('hide',v!=='yahoo');
-  document.getElementById('dukaFields').classList.toggle('hide',v!=='dukascopy');
-  document.getElementById('csvFields').classList.toggle('hide',v!=='csv');
+// ── status + toasts ──────────────────────────────────────────────────────────
+function status(t, live){
+  document.getElementById('sbarL').textContent = t;
+  document.getElementById('liveDot').classList.toggle('on', !!live);
+}
+function toast(msg, kind){
+  const box = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind === 'err' ? ' t-err' : kind === 'warn' ? ' t-warn' : '');
+  el.textContent = msg;
+  box.appendChild(el);
+  setTimeout(() => { el.style.animation = 'tout .25s var(--ease) forwards';
+    setTimeout(() => el.remove(), 260); }, 5000);
+}
+function dinfo(t, ok){
+  const el = document.getElementById('dataInfo');
+  el.textContent = t; el.className = 'note ' + (ok ? 'ok' : 'err');
 }
 
-// ── LOAD STRATEGIES ──
-async function loadStrats(){
-  try{
-    const r=await(await fetch('/api/strategies')).json();
-    const sel=document.getElementById('stratSel');
-    sel.innerHTML='';
-    r.strategies.forEach(s=>{
-      const o=document.createElement('option');
-      o.value=s.name; o.textContent=s.class; sel.appendChild(o);
-    });
-    if(r.strategies.length) currentStrat=r.strategies[0].name;
-  }catch(e){}
+// ── data sources ─────────────────────────────────────────────────────────────
+function showSource(v){
+  document.querySelectorAll('.src-pane').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.seg button').forEach(b => b.classList.remove('on'));
+  document.getElementById('src-' + v).classList.add('on');
+  document.getElementById('seg-' + v).classList.add('on');
 }
-
-// ── CHECK DATA ──
 async function checkData(){
   try{
-    const d=await(await fetch('/api/data/status')).json();
-    if(d.loaded){
-      dinfo(d.bars+' bars | '+d.source,true);
-      document.getElementById('sbarL').textContent=d.source+' | '+d.bars+' bars';
+    const d = await (await fetch('/api/data/status')).json();
+    if (d.loaded) setDataset(d);
+  }catch(e){}
+}
+function setDataset(d){
+  S.data = { bars: d.bars, source: d.source, start: d.start || '', end: d.end || '' };
+  document.getElementById('dsEmpty').style.display = 'none';
+  document.getElementById('dsFacts').style.display = '';
+  document.getElementById('dsSource').textContent = d.source;
+  document.getElementById('dsBars').textContent = d.bars;
+  document.getElementById('dsStart').textContent = (d.start||'').slice(0,16) || '—';
+  document.getElementById('dsEnd').textContent = (d.end||'').slice(0,16) || '—';
+  refreshTicket();
+}
+async function loadAlpacaStatus(){
+  try{
+    const d = await (await fetch('/api/alpaca/status')).json();
+    const trial = document.getElementById('alpacaTrial');
+    const clearBtn = document.getElementById('btnAlpClear');
+    S.keyPath = d.config_path || '';
+    if (d.has_keys){
+      trial.textContent = 'Key saved — unlimited free IEX data';
+      trial.className = 'note ok'; trial.style.margin = '0 0 10px';
+      clearBtn.style.display = '';
+      document.getElementById('btnAlpReveal').style.display = '';
+      document.getElementById('btnAlpCopyPath').style.display = '';
+      document.getElementById('alpKeyInfo').textContent = 'Keys stored locally in ' + (d.config_path || '~/.wale_backtest');
+    } else {
+      document.getElementById('btnAlpReveal').style.display = 'none';
+      document.getElementById('btnAlpCopyPath').style.display = 'none';
+      trial.textContent = 'No API key — ' + d.trial_remaining + ' of ' + d.trial_limit + ' free trial downloads left (via Yahoo)';
+      trial.className = d.trial_remaining > 0 ? 'note' : 'note err';
+      clearBtn.style.display = 'none';
     }
   }catch(e){}
 }
-
-// ── TICKER LOOKUP ──
-async function lookupTicker(){
-  const sym=document.getElementById('symInput').value.trim();
-  if(!sym){dinfo('Enter a ticker symbol first',false);return;}
-  const si=document.getElementById('symInfo');
-  si.classList.remove('hide'); si.textContent='Looking up '+sym+'...'; si.className='info';
-  status('Looking up '+sym+'...',true);
+async function revealKeyFile(){
   try{
-    const d=await(await fetch('/api/data/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})})).json();
-    if(d.valid){
-      si.textContent=d.name+' ('+d.type+') | '+d.bars+' bars | '+d.start+' to '+d.end;
-      si.className='info ok';
-      document.getElementById('startInput').value=d.start;
-      document.getElementById('startInput').placeholder=d.start+' (earliest)';
-      status(d.symbol+' found',true);
-    } else {
-      si.textContent=d.error||'Ticker not found';
-      si.className='info err';
-      status('Not found');
-    }
-  }catch(e){si.textContent='Network error';si.className='info err';status('Error');}
+    const d = await (await fetch('/api/alpaca/reveal', {method:'POST'})).json();
+    if (d.error) toast(d.error, 'err');
+    else toast('Opened key file location in Explorer');
+  }catch(e){ toast('Could not open Explorer', 'err'); }
 }
-
-// ── YAHOO FETCH ──
-async function fetchYahoo(){
-  const sym=document.getElementById('symInput').value.trim();
-  const int=document.getElementById('intSelect').value;
-  const start=document.getElementById('startInput').value.trim();
-  if(!sym){dinfo('Enter a ticker symbol first',false);return;}
-  status('Downloading '+sym+(start?' from '+start:' (max)')+'...',true);
-  dinfo('Downloading...',false);
+async function copyKeyPath(){
+  if (!S.keyPath){ toast('No key file yet', 'warn'); return; }
   try{
-    const d=await(await fetch('/api/data/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym,interval:int,start:start})})).json();
-    if(d.error){dinfo(d.error,false);status('Error');}
-    else{dinfo(d.bars+' bars | '+d.source,true);status('Data Loaded',true);}
-  }catch(e){dinfo('Network error',false);status('Error');}
-}
-
-// ── DUKASCOPY FETCH ──
-async function fetchDuka(){
-  const sym=document.getElementById('dukaSym').value.trim();
-  const start=document.getElementById('dukaStart').value.trim();
-  const end=document.getElementById('dukaEnd').value.trim();
-  const res=document.getElementById('dukaRes').value;
-  if(!sym){dinfo('Enter a currency pair (e.g. EUR-USD)',false);return;}
-  if(!start){dinfo('Enter a start date (dd-mm-yyyy)',false);return;}
-  status('Fetching '+sym+' from Dukascopy...',true); dinfo('Downloading (may take a minute)...',false);
-  try{
-    const d=await(await fetch('/api/data/dukascopy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym,start,end,resample:res})})).json();
-    if(d.error){dinfo(d.error,false);status('Error');}
-    else{dinfo(d.bars+' bars | '+d.source,true);status('Dukascopy Loaded',true);}
-  }catch(e){dinfo('Network error',false);status('Error');}
-}
-
-// ── CSV UPLOAD ──
-async function uploadCSV(input){
-  if(!input.files.length)return;
-  status('Uploading...',true); dinfo('Uploading...',false);
-  const fd=new FormData(); fd.append('file',input.files[0]);
-  try{
-    const d=await(await fetch('/api/data/upload',{method:'POST',body:fd})).json();
-    if(d.error){dinfo(d.error,false);status('Error');}
-    else{dinfo(d.bars+' bars | '+d.source,true);status('CSV Loaded',true);}
-  }catch(e){dinfo('Network error',false);}
-  input.value='';
-}
-
-// ── EDITOR TABS ──
-function showEditorTab(which){
-  const pineWrap=document.getElementById('pineWrap');
-  const pyWrap=document.getElementById('pyWrap');
-  const btnPine=document.getElementById('btnPineTab');
-  const btnPy=document.getElementById('btnPyTab');
-  if(which==='pine'){
-    const show=pineWrap.classList.contains('hide');
-    pineWrap.classList.toggle('hide',!show);
-    pyWrap.classList.add('hide');
-    btnPine.style.opacity=show?'1':'.6';
-    btnPy.style.opacity='.6';
-  } else {
-    const show=pyWrap.classList.contains('hide');
-    pyWrap.classList.toggle('hide',!show);
-    pineWrap.classList.add('hide');
-    btnPy.style.opacity=show?'1':'.6';
-    btnPine.style.opacity='.6';
+    await navigator.clipboard.writeText(S.keyPath);
+    toast('Path copied — the file holds your key ID and secret');
+  }catch(e){
+    prompt('Copy the key file path:', S.keyPath);
   }
 }
-
-// ── PYTHON STRATEGY SAVE ──
-async function savePyStrategy(){
-  const code=document.getElementById('pyCode').value.trim();
-  const name=document.getElementById('pyName').value.trim()||'custom_strategy';
-  const el=document.getElementById('pyInfo');
-  if(!code){el.textContent='Write some code first';el.className='info err';return;}
-  el.textContent='Saving...'; el.className='info';
+async function saveAlpacaKeys(){
+  const key_id = document.getElementById('alpKeyId').value.trim();
+  const secret = document.getElementById('alpSecret').value.trim();
+  const el = document.getElementById('alpKeyInfo');
+  if (!key_id || !secret){ el.textContent = 'Enter both key ID and secret'; el.className = 'note err'; return; }
+  el.textContent = 'Validating with Alpaca...'; el.className = 'note';
   try{
-    const d=await(await fetch('/api/save-strategy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,name})})).json();
-    if(d.success){el.textContent='Saved & registered: '+d.name;el.className='info ok';await loadStrats();
-      // Auto-select the new strategy
-      const sel=document.getElementById('stratSel');
-      for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===d.name){sel.selectedIndex=i;currentStrat=d.name;break;}}
-    } else {el.textContent=d.error||'Failed';el.className='info err';}
-  }catch(e){el.textContent='Network error';el.className='info err';}
+    const d = await (await fetch('/api/alpaca/keys', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key_id, secret})})).json();
+    if (d.success){
+      el.textContent = 'Keys validated (' + d.mode + ' auth) and saved'; el.className = 'note ok';
+      document.getElementById('alpKeyId').value = ''; document.getElementById('alpSecret').value = '';
+      await loadAlpacaStatus(); toast('Alpaca keys saved');
+    } else { el.textContent = d.error || 'Validation failed'; el.className = 'note err'; }
+  }catch(e){ el.textContent = 'Network error'; el.className = 'note err'; }
 }
-
-// ── PINE EDITOR ──
-async function translatePine(){
-  const code=document.getElementById('pineCode').value.trim();
-  if(!code)return;
-  const el=document.getElementById('pineInfo');
-  el.textContent='Translating...'; el.className='info';
+async function clearAlpacaKeys(){
+  await fetch('/api/alpaca/keys', {method:'DELETE'});
+  await loadAlpacaStatus(); toast('Alpaca keys removed');
+}
+async function fetchAlpaca(){
+  const sym = document.getElementById('alpSym').value.trim();
+  if (!sym){ dinfo('Enter a ticker symbol first', false); return; }
+  const body = {
+    symbol: sym, timeframe: document.getElementById('alpTf').value,
+    start: document.getElementById('alpStart').value.trim(),
+    end: document.getElementById('alpEnd').value.trim(),
+    adjustment: document.getElementById('alpAdj').value,
+  };
+  status('Fetching ' + sym + ' from Alpaca...', true); dinfo('Downloading bars...', false);
   try{
-    const d=await(await fetch('/api/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pine_code:code})})).json();
-    if(d.success){el.textContent='Translated: '+(d.strategy_name||'ok');el.className='info ok';await loadStrats();}
-    else{el.textContent=(d.issues||[]).join(', ');el.className='info err';}
-  }catch(e){el.textContent='Error';el.className='info err';}
+    const d = await (await fetch('/api/data/alpaca', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})).json();
+    if (d.error){
+      dinfo(d.error, false); status('Fetch failed');
+      if (d.needs_keys){ const el = document.getElementById('alpKeyInfo'); el.textContent = 'Add your free Alpaca API key above to fetch bars'; el.className = 'note err'; }
+    } else { dinfo(d.bars + ' bars | ' + d.source, true); setDataset(d); status(d.source + ' loaded', true); toast(d.bars + ' bars loaded'); }
+  }catch(e){ dinfo('Network error', false); status('Fetch failed'); }
 }
-
-// ── BACKTEST ──
-async function runBt(){
-  const s=document.getElementById('stratSel').value;
-  const c=parseFloat(document.getElementById('commInput').value)||.001;
-  if(!s)return;
-  status('Running backtest...',true);
-  document.getElementById('btnBt').disabled=true;
+async function lookupTicker(){
+  const sym = document.getElementById('symInput').value.trim();
+  if (!sym){ dinfo('Enter a ticker symbol first', false); return; }
+  const si = document.getElementById('symInfo');
+  si.style.display = ''; si.textContent = 'Looking up ' + sym + '...'; si.className = 'note';
   try{
-    const d=await(await fetch('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:s,commission:c})})).json();
-    if(d.error){status(d.error);} else{renderSum(d);renderTr(d);renderCh(d);status('Backtest Complete',true);tab('summary');}
-  }catch(e){status('Error: '+e.message);}
-  document.getElementById('btnBt').disabled=false;
+    const d = await (await fetch('/api/data/lookup', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({symbol: sym})})).json();
+    if (d.valid){
+      si.textContent = d.name + ' (' + d.type + ') | ' + d.bars + ' bars | ' + d.start + ' to ' + d.end;
+      si.className = 'note ok';
+      document.getElementById('startInput').value = d.start;
+    } else { si.textContent = d.error || 'Ticker not found'; si.className = 'note err'; }
+  }catch(e){ si.textContent = 'Network error'; si.className = 'note err'; }
+}
+async function fetchYahoo(){
+  const sym = document.getElementById('symInput').value.trim();
+  if (!sym){ dinfo('Enter a ticker symbol first', false); return; }
+  status('Downloading ' + sym + '...', true); dinfo('Downloading...', false);
+  try{
+    const d = await (await fetch('/api/data/download', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      symbol: sym, interval: document.getElementById('intSelect').value, start: document.getElementById('startInput').value.trim()})})).json();
+    if (d.error){ dinfo(d.error, false); status('Fetch failed'); }
+    else { dinfo(d.bars + ' bars | ' + d.source, true); setDataset(d); status('Data loaded', true); if (d.trial_remaining !== undefined) await loadAlpacaStatus(); }
+  }catch(e){ dinfo('Network error', false); status('Fetch failed'); }
+}
+async function fetchDuka(){
+  const sym = document.getElementById('dukaSym').value.trim();
+  const start = document.getElementById('dukaStart').value.trim();
+  if (!sym){ dinfo('Enter a currency pair (e.g. EUR-USD)', false); return; }
+  if (!start){ dinfo('Enter a start date (dd-mm-yyyy)', false); return; }
+  status('Fetching ' + sym + ' from Dukascopy...', true); dinfo('Downloading (may take a minute)...', false);
+  try{
+    const d = await (await fetch('/api/data/dukascopy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      symbol: sym, start, end: document.getElementById('dukaEnd').value.trim(), resample: document.getElementById('dukaRes').value})})).json();
+    if (d.error){ dinfo(d.error, false); status('Fetch failed'); }
+    else { dinfo(d.bars + ' bars | ' + d.source, true); setDataset(d); status('Dukascopy loaded', true); }
+  }catch(e){ dinfo('Network error', false); status('Fetch failed'); }
+}
+async function uploadCSV(input){
+  if (!input.files.length) return;
+  status('Uploading...', true); dinfo('Uploading...', false);
+  const fd = new FormData(); fd.append('file', input.files[0]);
+  try{
+    const d = await (await fetch('/api/data/upload', {method:'POST', body: fd})).json();
+    if (d.error){ dinfo(d.error, false); status('Upload failed'); }
+    else { dinfo(d.bars + ' bars | ' + d.source, true); setDataset(d); status('CSV loaded', true); }
+  }catch(e){ dinfo('Network error', false); }
+  input.value = '';
 }
 
-// ── RENDER SUMMARY ──
-function renderSum(d){
-  document.getElementById('sumEmpty').classList.add('hide');
-  document.getElementById('sumContent').classList.remove('hide');
-  const m=d.metrics;
-  document.getElementById('mgrid').innerHTML=`
-    <div class="mcard"><div class="ml">Total Trades</div><div class="mv">${d.total_trades}</div><div class="ms">${d.bars} bars</div></div>
-    <div class="mcard"><div class="ml">Profit Factor</div><div class="mv ${m.profit_factor>=1?'pos':'neg'}">${m.profit_factor.toFixed(2)}</div></div>
-    <div class="mcard"><div class="ml">Win Rate</div><div class="mv">${(m.win_rate*100).toFixed(1)}%</div></div>
-    <div class="mcard"><div class="ml">Total Return</div><div class="mv ${m.total_return>=0?'pos':'neg'}">${(m.total_return*100).toFixed(1)}%</div></div>
-    <div class="mcard"><div class="ml">Sharpe Ratio</div><div class="mv">${m.sharpe_ratio.toFixed(2)}</div></div>
-    <div class="mcard"><div class="ml">Max Drawdown</div><div class="mv neg">-${(m.max_drawdown*100).toFixed(1)}%</div></div>`;
-  document.querySelector('#dtbl tbody').innerHTML=`
-    <tr><td>Profit Factor</td><td>${m.profit_factor.toFixed(4)}</td></tr>
-    <tr><td>Sharpe Ratio</td><td>${m.sharpe_ratio.toFixed(4)}</td></tr>
-    <tr><td>Total Return</td><td style="color:${m.total_return>=0?'var(--green)':'var(--red)'}">${(m.total_return*100).toFixed(2)}%</td></tr>
-    <tr><td>Max Drawdown</td><td style="color:var(--red)">-${(m.max_drawdown*100).toFixed(2)}%</td></tr>
-    <tr><td>Win Rate</td><td>${(m.win_rate*100).toFixed(2)}%</td></tr>
-    <tr><td>Avg Win</td><td style="color:var(--green)">${(m.avg_win*100).toFixed(4)}%</td></tr>
-    <tr><td>Avg Loss</td><td style="color:var(--red)">${(m.avg_loss*100).toFixed(4)}%</td></tr>
-    <tr><td>Expectancy</td><td>${(m.expectancy*100).toFixed(4)}%</td></tr>
-    <tr><td>Calmar Ratio</td><td>${m.calmar_ratio.toFixed(4)}</td></tr>`;
+// ── strategy library ─────────────────────────────────────────────────────────
+async function loadLibrary(){
+  try{
+    const r = await (await fetch('/api/strategies')).json();
+    S.strategies = r.strategies || [];
+    if (S.active && !S.strategies.find(s => s.name === S.active)) S.active = null;
+    renderLibrary(r.load_errors || []);
+    refreshTicket();
+  }catch(e){}
 }
-
-// ── RENDER TRADES ──
-let _tradeData=null;
-function renderTr(d){
-  _tradeData=d;
-  if(!d.trades.length)return;
-  document.getElementById('trEmpty').classList.add('hide');
-  document.getElementById('trContent').classList.remove('hide');
-  document.getElementById('trCnt').textContent=d.total_trades;
-  const tb=document.querySelector('#trTbl tbody');
-  tb.innerHTML='';
-  [...d.trades].reverse().forEach(t=>{
-    const dc=t.direction==='LONG'?'var(--green)':'var(--red)';
-    const pc=t.pnl_pct>=0?'var(--green)':'var(--red)';
-    tb.innerHTML+=`<tr><td>${t.id}</td><td style="text-align:right;color:${dc}">${t.direction}</td><td style="text-align:right;font-size:10px;font-family:var(--mono)">${t.entry_date||''}</td><td style="text-align:right;font-family:var(--mono)">$${t.entry_price.toFixed(2)}</td><td style="text-align:right;font-size:10px;font-family:var(--mono)">${t.exit_date||''}</td><td style="text-align:right;font-family:var(--mono)">$${t.exit_price.toFixed(2)}</td><td style="text-align:right;font-family:var(--mono);color:var(--text-2)">${t.bars_held||''}</td><td style="text-align:right;color:${pc};font-family:var(--mono)">${t.pnl_pct>=0?'+':''}${t.pnl_pct.toFixed(2)}%</td></tr>`;
+function renderLibrary(loadErrors){
+  const errBox = document.getElementById('libErrors');
+  errBox.innerHTML = '';
+  loadErrors.forEach(le => {
+    const div = document.createElement('div');
+    div.className = 'load-err';
+    div.textContent = 'Strategy "' + le.module + '" failed to load and is hidden: ' + le.error;
+    errBox.appendChild(div);
+  });
+  const grid = document.getElementById('libGrid');
+  grid.innerHTML = '';
+  S.strategies.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'scard' + (s.name === S.active ? ' active' : '');
+    const kb = s.builtin ? '<span class="kbadge k-builtin">BUILT-IN</span>'
+      : (s.kind === 'pine' ? '<span class="kbadge k-pine">PINE</span>' : '<span class="kbadge k-python">PYTHON</span>');
+    const params = Object.keys(s.params || {});
+    card.innerHTML =
+      '<div class="scard-top"><div><h3></h3><div class="smod"></div></div>' + kb + '</div>' +
+      (params.length ? '<div class="pchips">' + params.slice(0,6).map(p => '<span class="pchip">' + esc(p) + '</span>').join('') + '</div>' : '') +
+      '<div class="scard-actions">' +
+        '<button class="arm-btn' + (s.name === S.active ? ' armed' : '') + '">' + (s.name === S.active ? '&#10003; Loaded' : 'Load') + '</button>' +
+        (s.has_source ? '<button class="icon-btn" title="View source"><svg viewBox="0 0 24 24"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg></button>' : '') +
+        (s.deletable ? '<button class="icon-btn danger" title="Delete strategy"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2m-8 0l1 13h8l1-13"/></svg></button>' : '') +
+      '</div>';
+    card.querySelector('h3').textContent = s.display;
+    card.querySelector('.smod').textContent = s.class + ' · ' + s.name;
+    card.querySelector('.arm-btn').addEventListener('click', () => arm(s.name));
+    const [srcBtn, delBtn] = card.querySelectorAll('.icon-btn');
+    if (s.has_source && srcBtn) srcBtn.addEventListener('click', () => viewSource(s));
+    const dBtn = card.querySelector('.icon-btn.danger');
+    if (dBtn) dBtn.addEventListener('click', () => deleteStrategy(s));
+    grid.appendChild(card);
   });
 }
+function esc(t){ const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+function arm(name){
+  S.active = name; S.bestParams = null;
+  document.getElementById('optChips').innerHTML = '';
+  document.getElementById('btnOptApply').style.display = 'none';
+  renderLibrary([]); refreshTicket();
+  const s = S.strategies.find(x => x.name === name);
+  status('Loaded: ' + (s ? s.display : name), true);
+  toast('Loaded: ' + (s ? s.display : name));
+}
+async function deleteStrategy(s){
+  if (!confirm('Delete "' + s.display + '" (' + s.name + ')?\n\nThis removes its files from disk.')) return;
+  try{
+    const r = await (await fetch('/api/strategies/' + encodeURIComponent(s.name), {method:'DELETE'})).json();
+    if (r.success){ toast('Deleted ' + s.name); if (S.active === s.name) S.active = null; await loadLibrary(); }
+    else toast(r.error || 'Delete failed', 'err');
+  }catch(e){ toast('Network error', 'err'); }
+}
+let _srcCache = null;
+async function viewSource(s){
+  try{
+    const r = await (await fetch('/api/strategies/' + encodeURIComponent(s.name) + '/source')).json();
+    if (r.error){ toast(r.error, 'err'); return; }
+    _srcCache = r;
+    document.getElementById('srcTitle').textContent = s.display + ' — source';
+    document.getElementById('srcTabPine').style.display = r.pine ? '' : 'none';
+    srcShow('py');
+    document.getElementById('srcOverlay').classList.add('show');
+  }catch(e){ toast('Network error', 'err'); }
+}
+function srcShow(which){
+  if (!_srcCache) return;
+  document.getElementById('srcBody').textContent = which === 'pine' ? (_srcCache.pine || '') : (_srcCache.python || '');
+}
+function closeSource(){ document.getElementById('srcOverlay').classList.remove('show'); }
 
-// ── RENDER CHARTS ──
-let _chartData=null;
+// ── editor workspace ─────────────────────────────────────────────────────────
+function openWorkspace(mode){
+  document.getElementById('libHome').style.display = 'none';
+  document.getElementById('wsEditor').classList.add('on');
+  wsMode(mode);
+}
+function closeWorkspace(){
+  document.getElementById('wsEditor').classList.remove('on');
+  document.getElementById('libHome').style.display = '';
+}
+function wsMode(mode){
+  const pine = mode === 'pine';
+  document.getElementById('wsPine').style.display = pine ? '' : 'none';
+  document.getElementById('wsPy').style.display = pine ? 'none' : '';
+  document.getElementById('edTabPine').classList.toggle('on', pine);
+  document.getElementById('edTabPy').classList.toggle('on', !pine);
+  document.getElementById('edTabPy').classList.toggle('py', !pine);
+  const go = document.getElementById('wsGo');
+  go.textContent = pine ? 'Translate & load' : 'Save & load';
+  go.onclick = pine ? translatePine : savePyStrategy;
+  document.getElementById('wsHint').textContent = pine
+    ? 'Translation compiles your Pine into a runnable Python strategy and loads it.'
+    : 'Saves a BaseStrategy subclass into your library and loads it.';
+}
+function clog(msg, cls){
+  const c = document.getElementById('wsConsole');
+  const div = document.createElement('div');
+  div.className = 'cline' + (cls ? ' ' + cls : '');
+  div.textContent = msg;
+  c.appendChild(div); c.scrollTop = c.scrollHeight;
+}
+function cclear(){
+  const c = document.getElementById('wsConsole');
+  c.innerHTML = '<div class="mlabel" style="margin-bottom:8px">Translator console</div>';
+}
+async function translatePine(){
+  const code = document.getElementById('pineCode').value.trim();
+  if (!code){ clog('Paste a Pine script first.', 'c-warn'); return; }
+  cclear(); clog('Translating...');
+  try{
+    const d = await (await fetch('/api/translate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pine_code: code})})).json();
+    (d.issues || []).forEach(i => clog('ISSUE  ' + i, 'c-err'));
+    (d.warnings || []).forEach(w => clog('WARN   ' + w, 'c-warn'));
+    if (d.success){
+      await loadLibrary();
+      if (d.module_name && S.strategies.find(s => s.name === d.module_name)){
+        S.lastTranslated = d.module_name; S.pineDirty = false;
+        arm(d.module_name);
+        clog('OK     "' + d.strategy_name + '" translated, registered, loaded.', 'c-ok');
+        clog('       Press  ▶ Run backtest  in the top bar.', 'c-ok');
+      } else {
+        S.lastTranslated = null;
+        clog('ERROR  Translated but not found in the library — not loaded. Do not run.', 'c-err');
+      }
+    } else {
+      S.lastTranslated = null;
+      clog('FAILED Translation unsuccessful — nothing was loaded.', 'c-err');
+    }
+  }catch(e){ clog('ERROR  ' + e.message, 'c-err'); }
+}
+async function savePyStrategy(){
+  const code = document.getElementById('pyCode').value.trim();
+  const name = document.getElementById('pyName').value.trim() || 'custom_strategy';
+  if (!code){ clog('Write some code first.', 'c-warn'); return; }
+  cclear(); clog('Saving ' + name + '...');
+  try{
+    const d = await (await fetch('/api/save-strategy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, name})})).json();
+    if (d.success){
+      await loadLibrary(); arm(d.name);
+      clog('OK     Saved and loaded as "' + d.name + '".', 'c-ok');
+    } else clog('FAILED ' + (d.error || 'Save failed'), 'c-err');
+  }catch(e){ clog('ERROR  ' + e.message, 'c-err'); }
+}
+
+// ── backtest ─────────────────────────────────────────────────────────────────
+async function runBt(extraParams){
+  if (!S.active) return;
+  const pineCode = document.getElementById('pineCode').value.trim();
+  if (pineCode && S.pineDirty){
+    if (!confirm('The Pine editor has changes that were never translated.\n\nThis run uses the loaded strategy, NOT the edited Pine.\n\nOK = run the loaded strategy anyway.\nCancel = go translate first.')) return;
+  }
+  const strat = S.strategies.find(s => s.name === S.active);
+  status('Running ' + (strat ? strat.display : S.active) + '...', true);
+  const runBtn = document.getElementById('btnBt');
+  runBtn.disabled = true;
+  runBtn.innerHTML = '<span class="spin spin-dark"></span>Running...';
+  document.getElementById('btErrBanner').classList.remove('show');
+  try{
+    const body = { strategy: S.active, commission: parseFloat(document.getElementById('commInput').value) || 0.001 };
+    if (extraParams) body.params = extraParams;
+    const d = await (await fetch('/api/backtest', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})).json();
+    if (d.error){ status(d.error); toast(d.error, 'err'); }
+    else {
+      renderSum(d); renderTr(d); renderCh(d);
+      showView('backtest'); tab('summary');
+      if (d.bar_errors > 0){
+        const b = document.getElementById('btErrBanner');
+        b.textContent = 'This strategy threw on ' + d.bar_errors + ' bar(s) — results are NOT trustworthy. First error: ' + (d.first_error || 'unknown');
+        b.classList.add('show');
+        status('Completed with errors — ' + (d.strategy_class || S.active));
+        toast('Run had per-bar errors', 'err');
+      } else {
+        status('Backtest complete — ' + (d.strategy_class || S.active) + ' · ' + d.total_trades + ' trades', true);
+      }
+    }
+  }catch(e){ status('Error: ' + e.message); }
+  runBtn.innerHTML = '&#9654;&nbsp;Run backtest';
+  runBtn.disabled = false;
+  refreshTicket();
+}
+function runBtWithBest(){ if (S.bestParams) runBt(S.bestParams); }
+
+function renderSum(d){
+  S.results = d;
+  document.getElementById('sumEmpty').style.display = 'none';
+  document.getElementById('sumContent').style.display = '';
+  const m = d.metrics;
+  document.getElementById('mgrid').innerHTML =
+    '<div class="mcard"><div class="ml">Total trades</div><div class="mv">' + d.total_trades + '</div><div class="ms">' + d.bars + ' bars</div></div>' +
+    '<div class="mcard"><div class="ml">Profit factor</div><div class="mv ' + (m.profit_factor >= 1 ? 'pos' : 'neg') + '">' + m.profit_factor.toFixed(2) + '</div></div>' +
+    '<div class="mcard"><div class="ml">Win rate</div><div class="mv">' + (m.win_rate * 100).toFixed(1) + '%</div></div>' +
+    '<div class="mcard"><div class="ml">Total return</div><div class="mv ' + (m.total_return >= 0 ? 'pos' : 'neg') + '">' + (m.total_return * 100).toFixed(1) + '%</div></div>' +
+    '<div class="mcard"><div class="ml">Sharpe ratio</div><div class="mv">' + m.sharpe_ratio.toFixed(2) + '</div></div>' +
+    '<div class="mcard"><div class="ml">Max drawdown</div><div class="mv neg">-' + (m.max_drawdown * 100).toFixed(1) + '%</div></div>';
+  document.querySelector('#dtbl tbody').innerHTML =
+    '<tr><td>Profit factor</td><td>' + m.profit_factor.toFixed(4) + '</td></tr>' +
+    '<tr><td>Sharpe ratio</td><td>' + m.sharpe_ratio.toFixed(4) + '</td></tr>' +
+    '<tr><td>Total return</td><td class="' + (m.total_return >= 0 ? 'pos' : 'neg') + '">' + (m.total_return * 100).toFixed(2) + '%</td></tr>' +
+    '<tr><td>Max drawdown</td><td class="neg">-' + (m.max_drawdown * 100).toFixed(2) + '%</td></tr>' +
+    '<tr><td>Win rate</td><td>' + (m.win_rate * 100).toFixed(2) + '%</td></tr>' +
+    '<tr><td>Avg win</td><td class="pos">' + (m.avg_win * 100).toFixed(4) + '%</td></tr>' +
+    '<tr><td>Avg loss</td><td class="neg">' + (m.avg_loss * 100).toFixed(4) + '%</td></tr>' +
+    '<tr><td>Expectancy</td><td>' + (m.expectancy * 100).toFixed(4) + '%</td></tr>' +
+    '<tr><td>Calmar ratio</td><td>' + m.calmar_ratio.toFixed(4) + '</td></tr>';
+}
+function renderTr(d){
+  if (!d.trades.length) return;
+  document.getElementById('trEmpty').style.display = 'none';
+  document.getElementById('trContent').style.display = '';
+  document.getElementById('trCnt').textContent = d.total_trades;
+  const tb = document.querySelector('#trTbl tbody');
+  tb.innerHTML = [...d.trades].reverse().map(t =>
+    '<tr><td>' + t.id + '</td>' +
+    '<td class="' + (t.direction === 'LONG' ? 'pos' : 'neg') + '">' + t.direction + '</td>' +
+    '<td style="font-size:10px">' + (t.entry_date || '') + '</td>' +
+    '<td>$' + (t.entry_price != null ? t.entry_price.toFixed(2) : '—') + '</td>' +
+    '<td style="font-size:10px">' + (t.exit_date || '') + '</td>' +
+    '<td>' + (t.exit_price != null ? '$' + t.exit_price.toFixed(2) : '<span style="color:var(--faint)">Open</span>') + '</td>' +
+    '<td style="color:var(--faint)">' + (t.bars_held || '') + '</td>' +
+    '<td class="' + (t.pnl_pct >= 0 ? 'pos' : 'neg') + '">' + (t.exit_price == null ? '<span style="color:var(--faint)">—</span>' : (t.pnl_pct >= 0 ? '+' : '') + t.pnl_pct.toFixed(2) + '%') + '</td></tr>'
+  ).join('');
+}
+
+// ── charts (canvas, offline, token colors) ───────────────────────────────────
+const CH_BID = '#2FD57C', CH_ASK = '#FF5C5C';
 function renderCh(d){
-  if(!d.equity_curve||!d.equity_curve.length)return;
-  document.getElementById('chEmpty').classList.add('hide');
-  document.getElementById('chContent').classList.remove('hide');
-  _chartData=d;
-  // Update titles with latest values
-  const lastEq=d.equity_curve[d.equity_curve.length-1];
-  const lastDd=d.drawdown_curve[d.drawdown_curve.length-1];
-  document.getElementById('eqTitle').textContent='Equity Curve — '+lastEq.toFixed(2);
-  document.getElementById('ddTitle').textContent='Drawdown — '+lastDd.toFixed(1)+'%';
+  if (!d.equity_curve || !d.equity_curve.length) return;
+  document.getElementById('chEmpty').style.display = 'none';
+  document.getElementById('chContent').style.display = '';
+  S.chartData = d;
+  document.getElementById('eqTitle').textContent = 'Equity curve — ' + d.equity_curve[d.equity_curve.length-1].toFixed(2);
+  document.getElementById('ddTitle').textContent = 'Drawdown — ' + d.drawdown_curve[d.drawdown_curve.length-1].toFixed(1) + '%';
   _tryDrawCharts();
 }
 function _tryDrawCharts(){
-  if(!_chartData)return;
-  const cv=document.getElementById('eqCanvas');
-  const r=cv.getBoundingClientRect();
-  if(r.width<10) return;
-  drawLine('eqCanvas',_chartData.equity_curve,_chartData.dates,'#22c55e','rgba(34,197,94,.12)','$');
-  drawLine('ddCanvas',_chartData.drawdown_curve,_chartData.dates,'#ef4444','rgba(239,68,68,.12)','%');
+  if (!S.chartData) return;
+  const cv = document.getElementById('eqCanvas');
+  if (cv.getBoundingClientRect().width < 10) return;
+  drawLine('eqCanvas', S.chartData.equity_curve, S.chartData.dates, CH_BID, 'rgba(47,213,124,.12)', '$');
+  drawLine('ddCanvas', S.chartData.drawdown_curve, S.chartData.dates, CH_ASK, 'rgba(255,92,92,.12)', '%');
 }
-function drawLine(id,vals,dates,lc,fc,unit){
-  const cv=document.getElementById(id),ctx=cv.getContext('2d');
-  const dpr=devicePixelRatio||1,rect=cv.getBoundingClientRect();
-  if(rect.width<10)return;
-  const CH=260;
-  cv.width=rect.width*dpr; cv.height=CH*dpr; ctx.scale(dpr,dpr);
-  const w=rect.width, h=CH;
-  const padL=58, padR=12, padT=12, padB=28;
-  const cw=w-padL-padR, ch=h-padT-padB;
-  ctx.clearRect(0,0,w,h);
-
-  const mn=Math.min(...vals), mx=Math.max(...vals), rng=mx-mn||1;
-
-  // Grid lines + Y-axis labels
-  ctx.textBaseline='middle'; ctx.font='10px "JetBrains Mono",monospace';
-  const gridN=4;
-  for(let i=0;i<=gridN;i++){
-    const y=padT+(i/gridN)*ch;
-    const val=mx-(i/gridN)*rng;
-    ctx.strokeStyle='#1e1e23'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(w-padR,y); ctx.stroke();
-    ctx.fillStyle='#52525b'; ctx.textAlign='right';
-    if(unit==='$') ctx.fillText(val.toFixed(val>=100?0:2),padL-6,y);
-    else ctx.fillText(val.toFixed(1)+'%',padL-6,y);
+function drawLine(id, vals, dates, lc, fc, unit){
+  const cv = document.getElementById(id), ctx = cv.getContext('2d');
+  const dpr = devicePixelRatio || 1, rect = cv.getBoundingClientRect();
+  if (rect.width < 10) return;
+  const CHH = 260;
+  cv.width = rect.width * dpr; cv.height = CHH * dpr; ctx.scale(dpr, dpr);
+  const w = rect.width, h = CHH;
+  const padL = 58, padR = 12, padT = 14, padB = 28;
+  const cw = w - padL - padR, ch = h - padT - padB;
+  ctx.clearRect(0, 0, w, h);
+  const mn = Math.min(...vals), mx = Math.max(...vals), rng = mx - mn || 1;
+  ctx.textBaseline = 'middle'; ctx.font = '10px "IBM Plex Mono","Cascadia Mono",monospace';
+  // pick precision from the value RANGE so a flat curve still shows distinct labels
+  const dec = rng < 0.05 ? 4 : rng < 0.5 ? 3 : rng < 5 ? 2 : rng < 50 ? 1 : 0;
+  for (let i = 0; i <= 4; i++){
+    const y = padT + (i / 4) * ch, val = mx - (i / 4) * rng;
+    ctx.strokeStyle = '#16202A'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillStyle = '#54626F'; ctx.textAlign = 'right';
+    ctx.fillText(val.toFixed(dec) + (unit === '%' ? '%' : ''), padL - 6, y);
   }
-
-  // X-axis date labels
-  if(dates&&dates.length){
-    ctx.fillStyle='#52525b'; ctx.textAlign='center'; ctx.textBaseline='top';
-    const nLabels=6;
-    for(let i=0;i<nLabels;i++){
-      const idx=Math.round(i*(dates.length-1)/(nLabels-1));
-      const x=padL+(idx/(vals.length-1))*cw;
-      const label=dates[idx]||'';
-      ctx.fillText(label.slice(5),x,h-padB+6); // show MM-DD
+  if (dates && dates.length){
+    ctx.fillStyle = '#54626F'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let i = 0; i < 6; i++){
+      const idx = Math.round(i * (dates.length - 1) / 5);
+      const x = padL + (idx / (vals.length - 1)) * cw;
+      ctx.fillText((dates[idx] || '').slice(2), x, h - padB + 6);
     }
   }
-
-  // Data line
-  ctx.strokeStyle=lc; ctx.lineWidth=1.5; ctx.lineJoin='round'; ctx.beginPath();
-  vals.forEach((v,i)=>{
-    const x=padL+(i/(vals.length-1))*cw;
-    const y=padT+((mx-v)/rng)*ch;
-    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  ctx.strokeStyle = lc; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.beginPath();
+  vals.forEach((v, i) => {
+    const x = padL + (i / (vals.length - 1)) * cw;
+    const y = padT + ((mx - v) / rng) * ch;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
   ctx.stroke();
-
-  // Gradient fill
-  const lastX=padL+cw;
-  ctx.lineTo(lastX,padT+ch); ctx.lineTo(padL,padT+ch); ctx.closePath();
-  const grad=ctx.createLinearGradient(0,padT,0,padT+ch);
-  grad.addColorStop(0,fc); grad.addColorStop(1,'transparent');
-  ctx.fillStyle=grad; ctx.fill();
-
-  // Hover crosshair setup
-  cv._chartMeta={vals,dates,mn,mx,rng,padL,padR,padT,padB,cw,ch,lc,fc,unit,w,h};
-  if(!cv._hasHover){
-    cv._hasHover=true;
-    cv.addEventListener('mousemove',function(e){_chartHover(this,e);});
-    cv.addEventListener('mouseleave',function(){_tryDrawCharts();});
+  ctx.lineTo(padL + cw, padT + ch); ctx.lineTo(padL, padT + ch); ctx.closePath();
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + ch);
+  grad.addColorStop(0, fc); grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad; ctx.fill();
+  cv._chartMeta = {vals, dates, mx, rng, padL, padR, padT, padB, cw, ch, lc, unit, w, h, dec};
+  if (!cv._hasHover){
+    cv._hasHover = true;
+    cv.addEventListener('mousemove', function(e){ _chartHover(this, e); });
+    cv.addEventListener('mouseleave', function(){ _tryDrawCharts(); });
   }
 }
-function _chartHover(cv,e){
-  const meta=cv._chartMeta; if(!meta)return;
-  const rect=cv.getBoundingClientRect();
-  const mx=e.clientX-rect.left;
-  const {vals,dates,mn,rng,padL,padR,padT,padB,cw,ch,lc,unit,w,h}=meta;
-  const maxV=meta.mx;
-  if(mx<padL||mx>w-padR)return;
-  const frac=(mx-padL)/cw;
-  const idx=Math.round(frac*(vals.length-1));
-  if(idx<0||idx>=vals.length)return;
-  const val=vals[idx];
-  const x=padL+(idx/(vals.length-1))*cw;
-  const y=padT+((maxV-val)/rng)*ch;
-
-  // Redraw base chart then overlay crosshair
-  const id=cv.id;
-  if(id==='eqCanvas') drawLine(id,_chartData.equity_curve,_chartData.dates,'#22c55e','rgba(34,197,94,.12)','$');
-  else drawLine(id,_chartData.drawdown_curve,_chartData.dates,'#ef4444','rgba(239,68,68,.12)','%');
-  // Remove hover listener temporarily to avoid recursion, it was already re-added by drawLine
-  // Draw crosshair on top
-  const dpr=devicePixelRatio||1;
-  const ctx=cv.getContext('2d');
-  ctx.save(); ctx.scale(1/dpr,1/dpr); ctx.scale(dpr,dpr);
-  // Vertical line
-  ctx.strokeStyle='rgba(255,255,255,.2)'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
-  ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+ch); ctx.stroke(); ctx.setLineDash([]);
-  // Dot
-  ctx.fillStyle=lc; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.stroke();
-  // Tooltip box
-  const dateStr=(dates&&dates[idx])||'';
-  const valStr=unit==='$'?val.toFixed(2):val.toFixed(1)+'%';
-  const txt=dateStr+' | '+valStr;
-  ctx.font='600 11px "JetBrains Mono",monospace';
-  const tw=ctx.measureText(txt).width+12;
-  let tx=x-tw/2; if(tx<padL)tx=padL; if(tx+tw>w-padR)tx=w-padR-tw;
-  const ty=y-28;
-  ctx.fillStyle='rgba(15,15,18,.92)'; ctx.strokeStyle='rgba(255,255,255,.1)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.roundRect(tx,ty,tw,20,4); ctx.fill(); ctx.stroke();
-  ctx.fillStyle='#fafafa'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(txt,tx+tw/2,ty+10);
+function _chartHover(cv, e){
+  const meta = cv._chartMeta; if (!meta) return;
+  const rect = cv.getBoundingClientRect();
+  const mxp = e.clientX - rect.left;
+  const {vals, dates, mx, rng, padL, padR, padT, ch, cw, lc, unit, w} = meta;
+  if (mxp < padL || mxp > w - padR) return;
+  const idx = Math.round(((mxp - padL) / cw) * (vals.length - 1));
+  if (idx < 0 || idx >= vals.length) return;
+  const val = vals[idx];
+  const x = padL + (idx / (vals.length - 1)) * cw;
+  const y = padT + ((mx - val) / rng) * ch;
+  if (cv.id === 'eqCanvas') drawLine(cv.id, S.chartData.equity_curve, S.chartData.dates, CH_BID, 'rgba(47,213,124,.12)', '$');
+  else drawLine(cv.id, S.chartData.drawdown_curve, S.chartData.dates, CH_ASK, 'rgba(255,92,92,.12)', '%');
+  const ctx = cv.getContext('2d');
+  ctx.save();
+  ctx.strokeStyle = 'rgba(232,237,242,.25)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + ch); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = lc; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#E8EDF2'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.stroke();
+  const txt = ((dates && dates[idx]) || '') + ' | ' + val.toFixed(meta.dec) + (unit === '%' ? '%' : '');
+  ctx.font = '600 11px "IBM Plex Mono","Cascadia Mono",monospace';
+  const tw = ctx.measureText(txt).width + 12;
+  let tx = x - tw / 2; if (tx < padL) tx = padL; if (tx + tw > w - meta.padR) tx = w - meta.padR - tw;
+  const ty = Math.max(y - 28, padT);
+  ctx.fillStyle = 'rgba(10,14,18,.92)'; ctx.strokeStyle = 'rgba(232,237,242,.15)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(tx, ty, tw, 20, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#E8EDF2'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(txt, tx + tw / 2, ty + 10);
   ctx.restore();
 }
 
-// ── DOWNLOAD HELPERS ──
-function _downloadFile(filename, content, mime='text/csv'){
-  const blob=new Blob([content],{type:mime});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+// ── downloads ────────────────────────────────────────────────────────────────
+async function _downloadFile(filename, content, mime){
+  // Saved server-side: blob-anchor downloads do nothing inside the native window
+  try{
+    const d = await (await fetch('/api/export/save', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({filename, content})})).json();
+    if (d.success) toast('Saved to ' + d.path);
+    else toast(d.error || 'Export failed', 'err');
+  }catch(e){ toast('Export failed: ' + e.message, 'err'); }
 }
 function downloadTrades(){
-  if(!_tradeData||!_tradeData.trades.length)return;
-  const hdr='#,Direction,Entry Date,Entry Price,Exit Date,Exit Price,Bars Held,PnL %\n';
-  const rows=_tradeData.trades.map(t=>
-    `${t.id},${t.direction},${t.entry_date||''},${t.entry_price.toFixed(2)},${t.exit_date||''},${t.exit_price.toFixed(2)},${t.bars_held||''},${t.pnl_pct.toFixed(2)}`
-  ).join('\n');
-  _downloadFile(`trades_${_tradeData.strategy||'backtest'}.csv`, hdr+rows);
+  const d = S.results; if (!d || !d.trades.length) return;
+  const rows = d.trades.map(t => [t.id, t.direction, t.entry_date || '',
+    t.entry_price != null ? t.entry_price.toFixed(2) : '',
+    t.exit_date || '', t.exit_price != null ? t.exit_price.toFixed(2) : '',
+    t.bars_held || '', t.exit_price != null ? t.pnl_pct.toFixed(2) : ''].join(','));
+  _downloadFile('trades_' + (d.strategy || 'backtest') + '.csv',
+    '#,Direction,Entry Date,Entry Price,Exit Date,Exit Price,Bars Held,PnL %\n' + rows.join('\n'));
 }
 function downloadSummary(){
-  if(!_tradeData||!_tradeData.metrics)return;
-  const m=_tradeData.metrics;
-  const hdr='Metric,Value\n';
-  const rows=[
-    `Strategy,${_tradeData.strategy||''}`,
-    `Total Trades,${_tradeData.total_trades}`,
-    `Bars,${_tradeData.bars}`,
-    `Profit Factor,${m.profit_factor.toFixed(4)}`,
-    `Sharpe Ratio,${m.sharpe_ratio.toFixed(4)}`,
-    `Total Return,${(m.total_return*100).toFixed(2)}%`,
-    `Max Drawdown,-${(m.max_drawdown*100).toFixed(2)}%`,
-    `Win Rate,${(m.win_rate*100).toFixed(2)}%`,
-    `Avg Win,${(m.avg_win*100).toFixed(4)}%`,
-    `Avg Loss,${(m.avg_loss*100).toFixed(4)}%`,
-    `Expectancy,${(m.expectancy*100).toFixed(4)}%`,
-    `Calmar Ratio,${m.calmar_ratio.toFixed(4)}`,
-  ].join('\n');
-  _downloadFile(`summary_${_tradeData.strategy||'backtest'}.csv`, hdr+rows);
+  const d = S.results; if (!d || !d.metrics) return;
+  const m = d.metrics;
+  _downloadFile('summary_' + (d.strategy || 'backtest') + '.csv', 'Metric,Value\n' + [
+    'Strategy,' + (d.strategy || ''), 'Total Trades,' + d.total_trades, 'Bars,' + d.bars,
+    'Profit Factor,' + m.profit_factor.toFixed(4), 'Sharpe Ratio,' + m.sharpe_ratio.toFixed(4),
+    'Total Return,' + (m.total_return * 100).toFixed(2) + '%', 'Max Drawdown,-' + (m.max_drawdown * 100).toFixed(2) + '%',
+    'Win Rate,' + (m.win_rate * 100).toFixed(2) + '%', 'Avg Win,' + (m.avg_win * 100).toFixed(4) + '%',
+    'Avg Loss,' + (m.avg_loss * 100).toFixed(4) + '%', 'Expectancy,' + (m.expectancy * 100).toFixed(4) + '%',
+    'Calmar Ratio,' + m.calmar_ratio.toFixed(4)].join('\n'));
 }
 function downloadChartData(){
-  if(!_chartData)return;
-  const hdr='Date,Equity,Drawdown %\n';
-  const rows=_chartData.equity_curve.map((eq,i)=>{
-    const date=(_chartData.dates&&_chartData.dates[i])||i;
-    const dd=_chartData.drawdown_curve[i]||0;
-    return `${date},${eq.toFixed(4)},${dd.toFixed(2)}`;
-  }).join('\n');
-  _downloadFile(`chart_${_chartData.strategy||'backtest'}.csv`, hdr+rows);
+  const d = S.chartData; if (!d) return;
+  const rows = d.equity_curve.map((eq, i) =>
+    ((d.dates && d.dates[i]) || i) + ',' + eq.toFixed(4) + ',' + (d.drawdown_curve[i] || 0).toFixed(2));
+  _downloadFile('chart_' + (d.strategy || 'backtest') + '.csv', 'Date,Equity,Drawdown %\n' + rows.join('\n'));
 }
-let _valData=null;
 function downloadValidation(){
-  if(!_valData)return;
-  _downloadFile(`validation_${_valData.strategy||'result'}.json`, JSON.stringify(_valData,null,2), 'application/json');
+  if (!S.valData) return;
+  _downloadFile('validation_' + (S.valData.strategy || 'result') + '.json', JSON.stringify(S.valData, null, 2), 'application/json');
 }
 
-// ── OPTIMIZE ──
+// ── TradingView comparison ───────────────────────────────────────────────────
+async function compareTv(input){
+  if (!input.files.length) return;
+  const fd = new FormData(); fd.append('file', input.files[0]);
+  input.value = '';
+  status('Comparing against TradingView...', true);
+  try{
+    const d = await (await fetch('/api/compare-tv', {method:'POST', body: fd})).json();
+    if (d.error){ toast(d.error, 'err'); status('Comparison failed'); return; }
+    document.getElementById('tvCmpResult').style.display = '';
+    const pct = d.legs ? Math.round(d.legs_exact / d.legs * 100) : 0;
+    document.getElementById('tvCmpSummary').innerHTML =
+      '<b style="color:' + (pct >= 90 ? 'var(--bid)' : pct >= 70 ? 'var(--amber)' : 'var(--ask)') + '">'
+      + d.legs_exact + ' of ' + d.legs + ' trade legs land on the identical bar (' + pct + '%)</b>'
+      + ' — TV: ' + d.tv_trades + ' trades, engine: ' + d.engine_trades
+      + '. Price offsets mean the chart adjustment differs — match the Adjustment selector to your TV chart. '
+      + 'For a 100% match, export your TV chart data and load it as CSV.';
+    const tb = document.querySelector('#tvCmpTbl tbody');
+    tb.innerHTML = d.rows.map(r => {
+      if (r.missing === 'engine')
+        return '<tr><td>' + r.tv_entry + '</td><td class="neg">—</td><td>' + (r.tv_exit||'') + '</td><td class="neg">—</td><td></td><td class="neg">only in TV</td></tr>';
+      if (r.missing === 'tv')
+        return '<tr><td class="neg">—</td><td>' + r.my_entry + '</td><td class="neg">—</td><td>' + (r.my_exit||'') + '</td><td></td><td class="neg">only in engine</td></tr>';
+      const v = (r.entry_match && r.exit_match) ? '<span class="pos">&#10003; exact</span>'
+        : (r.entry_match || r.exit_match) ? '<span style="color:var(--amber)">partial</span>'
+        : '<span class="neg">dates differ</span>';
+      const dpx = r.entry_px_diff_pct === null ? '' : (r.entry_px_diff_pct >= 0 ? '+' : '') + r.entry_px_diff_pct + '%';
+      return '<tr><td>' + r.tv_entry + '</td><td class="' + (r.entry_match?'pos':'neg') + '">' + r.my_entry + '</td>'
+        + '<td>' + (r.tv_exit||'') + '</td><td class="' + (r.exit_match?'pos':'neg') + '">' + (r.my_exit||'open') + '</td>'
+        + '<td>' + dpx + '</td><td>' + v + '</td></tr>';
+    }).join('');
+    status('Comparison done — ' + d.legs_exact + '/' + d.legs + ' legs exact', true);
+  }catch(e){ toast('Comparison failed: ' + e.message, 'err'); }
+}
+
+// ── optimizer ────────────────────────────────────────────────────────────────
 async function runOpt(){
-  const s=document.getElementById('stratSel').value; if(!s)return;
-  status('Optimizing...',true); document.getElementById('btnOpt').disabled=true;
+  if (!S.active) return;
+  status('Optimizing...', true);
+  const btn = document.getElementById('btnOpt'); btn.disabled = true;
+  const out = document.getElementById('optResult');
+  out.textContent = 'Grid-searching...';
   try{
-    const d=await(await fetch('/api/optimize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:s})})).json();
-    if(d.error) status(d.error);
-    else status('Best PF: '+d.best_score+' | '+JSON.stringify(d.best_params),true);
-  }catch(e){status('Error');}
-  document.getElementById('btnOpt').disabled=false;
+    const d = await (await fetch('/api/optimize', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({strategy: S.active})})).json();
+    if (d.error){ out.textContent = d.error; S.bestParams = null; status('Optimize failed'); }
+    else {
+      S.bestParams = d.best_params;
+      out.innerHTML = 'Best in-sample profit factor: <b>' + d.best_score + '</b>';
+      document.getElementById('optChips').innerHTML = Object.entries(d.best_params)
+        .map(([k, v]) => '<span class="pchip">' + esc(k) + ' = ' + esc(String(v)) + '</span>').join('');
+      document.getElementById('btnOptApply').style.display = '';
+      status('Optimizer done — best PF ' + d.best_score, true);
+    }
+  }catch(e){ out.textContent = 'Error: ' + e.message; status('Optimize failed'); }
+  btn.disabled = false; refreshTicket();
 }
 
-// ── VALIDATION ──
+// ── validation ───────────────────────────────────────────────────────────────
 async function runVal(){
-  const s=document.getElementById('stratSel').value; if(!s)return;
-  tab('validation');
-  document.getElementById('valEmpty').classList.add('hide');
-  document.getElementById('valContent').classList.remove('hide');
-  resetVal(); status('Running validation...',true);
-  document.getElementById('btnVal').disabled=true;
-  vbadge('vb1','badge-run','<span class="spin"></span>Running');
+  if (!S.active) return;
+  showView('backtest'); tab('validation');
+  document.getElementById('valEmpty').style.display = 'none';
+  document.getElementById('valContent').style.display = '';
+  resetVal(); status('Running validation...', true);
+  document.getElementById('btnVal').disabled = true;
+  vbadge('vb1', 'badge-run', '<span class="spin"></span>Running');
   try{
-    const d=await(await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      strategy:s,
-      n_perms_is:parseInt(document.getElementById('isPerms').value)||200,
-      n_perms_wf:parseInt(document.getElementById('wfPerms').value)||100,
-      train_years:parseFloat(document.getElementById('trainInput').value)||4
+    const d = await (await fetch('/api/validate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      strategy: S.active,
+      n_perms_is: parseInt(document.getElementById('isPerms').value) || 200,
+      n_perms_wf: parseInt(document.getElementById('wfPerms').value) || 100,
+      train_years: parseFloat(document.getElementById('trainInput').value) || 4,
     })})).json();
-    if(d.error){status(d.error);document.getElementById('btnVal').disabled=false;return;}
-    if(d.job_id) pollVal(d.job_id);
-    else if(d.result){showVal(d.result);document.getElementById('btnVal').disabled=false;}
-  }catch(e){status('Error');document.getElementById('btnVal').disabled=false;}
+    if (d.error){ status(d.error); toast(d.error, 'err'); document.getElementById('btnVal').disabled = false; return; }
+    if (d.job_id) pollVal(d.job_id);
+    else if (d.result){ showVal(d.result); document.getElementById('btnVal').disabled = false; }
+  }catch(e){ status('Validation error'); document.getElementById('btnVal').disabled = false; }
 }
 function resetVal(){
-  for(let i=1;i<=4;i++){vbadge('vb'+i,'badge-wait','Pending');document.getElementById('vd'+i).textContent='Waiting';}
-  document.getElementById('vbox').classList.add('hide');
+  for (let i = 1; i <= 4; i++){ vbadge('vb' + i, 'badge-wait', 'Pending'); document.getElementById('vd' + i).textContent = 'Waiting'; }
+  document.getElementById('vbox').style.display = 'none';
 }
-function vbadge(id,cls,html){const el=document.getElementById(id);el.className='badge '+cls;el.innerHTML=html;}
+function vbadge(id, cls, html){ const el = document.getElementById(id); el.className = 'badge ' + cls; el.innerHTML = html; }
 function pollVal(jid){
-  let fs=1;
-  const fi=setInterval(()=>{if(fs<=4){for(let i=1;i<fs;i++)vbadge('vb'+i,'badge-run','Running');vbadge('vb'+fs,'badge-run','<span class="spin"></span>Running');fs++;}},7000);
-  pollId=setInterval(async()=>{
+  let fs = 1;
+  const fi = setInterval(() => { if (fs <= 4){ for (let i = 1; i < fs; i++) vbadge('vb' + i, 'badge-run', 'Running'); vbadge('vb' + fs, 'badge-run', '<span class="spin"></span>Running'); fs++; } }, 7000);
+  pollId = setInterval(async () => {
     try{
-      const d=await(await fetch('/api/validate/'+jid)).json();
-      if(d.status==='complete'){clearInterval(pollId);clearInterval(fi);showVal(d.result);document.getElementById('btnVal').disabled=false;}
-      else if(d.status==='error'){clearInterval(pollId);clearInterval(fi);status('Error: '+(d.error||''));document.getElementById('btnVal').disabled=false;}
-    }catch(e){clearInterval(pollId);clearInterval(fi);status('Poll error');document.getElementById('btnVal').disabled=false;}
-  },2000);
+      const d = await (await fetch('/api/validate/' + jid)).json();
+      if (d.status === 'complete'){ clearInterval(pollId); clearInterval(fi); showVal(d.result); document.getElementById('btnVal').disabled = false; }
+      else if (d.status === 'error'){ clearInterval(pollId); clearInterval(fi); status('Validation error: ' + (d.error || '')); document.getElementById('btnVal').disabled = false; }
+    }catch(e){ clearInterval(pollId); clearInterval(fi); status('Poll error'); document.getElementById('btnVal').disabled = false; }
+  }, 2000);
 }
 function showVal(r){
-  _valData=r; _valData.strategy=document.getElementById('stratSel').value;
-  document.getElementById('btnDlVal').style.display='';
-  document.getElementById('vd1').textContent='PF: '+(r.is_pf||0).toFixed(4)+' | '+JSON.stringify(r.best_params||{});
-  vbadge('vb1','badge-pass','Done');
-  if(r.verdict==='QUICK'){
-    for(let i=2;i<=4;i++){vbadge('vb'+i,'badge-wait','Skipped');document.getElementById('vd'+i).textContent='Quick mode';}
-    showVbox('QUICK','Permutation tests skipped','v-meh');status('Quick Done',true);return;
+  S.valData = r; S.valData.strategy = S.active;
+  document.getElementById('btnDlVal').style.display = '';
+  document.getElementById('vd1').textContent = 'PF: ' + (r.is_pf || 0).toFixed(4) + ' | ' + JSON.stringify(r.best_params || {});
+  vbadge('vb1', 'badge-pass', 'Done');
+  if (r.verdict === 'QUICK'){
+    for (let i = 2; i <= 4; i++){ vbadge('vb' + i, 'badge-wait', 'Skipped'); document.getElementById('vd' + i).textContent = 'Quick mode'; }
+    showVbox('QUICK', 'Permutation tests skipped', 'v-meh'); status('Quick validation done', true); return;
   }
-  const ip=r.is_pvalue<.05;
-  document.getElementById('vd2').textContent='p='+r.is_pvalue.toFixed(6);
-  vbadge('vb2',ip?'badge-pass':'badge-fail',ip?'p<0.05':'p>=0.05');
-  document.getElementById('vd3').textContent='OOS PF: '+(r.oos_pf||0).toFixed(4)+' | Sharpe: '+(r.oos_sharpe||0).toFixed(4);
-  const op=(r.oos_pf||0)>=1.1;
-  vbadge('vb3',op?'badge-pass':'badge-fail',op?'PF>=1.1':'PF<1.1');
-  const wp=r.wf_pvalue<(r.wf_threshold||.05);
-  document.getElementById('vd4').textContent='p='+r.wf_pvalue.toFixed(6)+' | thresh: '+(r.wf_threshold||.05);
-  vbadge('vb4',wp?'badge-pass':'badge-fail',wp?'Pass':'Fail');
-  const v=r.verdict||'UNKNOWN';
-  const vm={VALIDATED:'Statistically significant edge detected.',OVERFIT:'Performance indistinguishable from random.',POOR:'Weak metrics, not worth trading.'};
-  showVbox(v,vm[v]||'',{VALIDATED:'v-ok',OVERFIT:'v-bad',POOR:'v-meh'}[v]||'');
-  status('Verdict: '+v,true);
+  const ip = r.is_pvalue < .05;
+  document.getElementById('vd2').textContent = 'p=' + (r.is_pvalue != null ? r.is_pvalue.toFixed(6) : 'n/a');
+  vbadge('vb2', ip ? 'badge-pass' : 'badge-fail', ip ? 'p<0.05' : 'p>=0.05');
+  document.getElementById('vd3').textContent = 'OOS PF: ' + (r.oos_pf || 0).toFixed(4) + ' | Sharpe: ' + (r.oos_sharpe || 0).toFixed(4);
+  const op = (r.oos_pf || 0) >= 1.1;
+  vbadge('vb3', op ? 'badge-pass' : 'badge-fail', op ? 'PF>=1.1' : 'PF<1.1');
+  const wp = r.wf_pvalue < (r.wf_threshold || .05);
+  document.getElementById('vd4').textContent = 'p=' + (r.wf_pvalue != null ? r.wf_pvalue.toFixed(6) : 'n/a') + ' | thresh: ' + (r.wf_threshold || .05);
+  vbadge('vb4', wp ? 'badge-pass' : 'badge-fail', wp ? 'Pass' : 'Fail');
+  const v = r.verdict || 'UNKNOWN';
+  const vm = {VALIDATED: 'Statistically significant edge detected.', OVERFIT: 'Performance indistinguishable from random.', POOR: 'Weak metrics, not worth trading.'};
+  showVbox(v, vm[v] || '', {VALIDATED: 'v-ok', OVERFIT: 'v-bad', POOR: 'v-meh'}[v] || 'v-meh');
+  status('Verdict: ' + v, true);
 }
-function showVbox(t,s,c){
-  const b=document.getElementById('vbox');
-  b.classList.remove('hide','v-ok','v-bad','v-meh');
-  b.classList.add(c);
-  document.getElementById('vtext').textContent=t;
-  document.getElementById('vsub').textContent=s;
+function showVbox(t, s, c){
+  const b = document.getElementById('vbox');
+  b.style.display = ''; b.className = 'vbox ' + c;
+  document.getElementById('vtext').textContent = t;
+  document.getElementById('vsub').textContent = s;
 }
 </script>
 </body>

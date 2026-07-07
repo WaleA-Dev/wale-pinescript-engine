@@ -130,8 +130,8 @@ def test_engine_with_csv():
 
     # Try to find SCHD data
     csv_paths = [
-        "data/SCHD_1H_databento.csv",   # SCHD data from Databento
-        "data/NDAQ_1H_TV_aligned.csv",   # Fallback: NDAQ data
+        "data/SCHD_1H.csv",
+        "data/NDAQ_1H_TV_aligned.csv",
     ]
 
     df = None
@@ -217,8 +217,10 @@ def test_engine_with_csv():
         print(f"\n--- First 5 Trades ---")
         for t in result.trades[:5]:
             signal = t.exit_signal.value if t.exit_signal else "Open"
+            exit_time = t.exit_time if t.exit_time is not None else "OPEN"
+            exit_price = f"${t.exit_price:.2f}" if t.exit_price is not None else "OPEN"
             print(f"  #{t.trade_id}: Entry {t.entry_time} @ ${t.entry_price:.2f} -> "
-                  f"Exit {t.exit_time} @ ${t.exit_price:.2f} ({signal}) P&L: ${t.pnl:.2f}")
+                  f"Exit {exit_time} @ {exit_price} ({signal}) P&L: ${t.pnl:.2f}")
 
 
 if __name__ == '__main__':

@@ -13,13 +13,16 @@ A local backtesting platform that translates PineScript strategies into Python c
 
 ![Web Backtester](docs/screenshots/web_dashboard.png)
 
-The dashboard you get when you run the web app or click **Open Dashboard** from the launcher. Pick your data source and symbol in the left sidebar, choose a strategy (or paste PineScript and hit Translate), tweak commission and validation settings, then run the backtest. The right panel shows Summary (trades, profit factor, win rate, drawdown), plus Trades, Charts, and Validation tabs. Everything stays local at `127.0.0.1:5000`.
+The dashboard you get when you launch the desktop app (or run the web app). Pick your data source and symbol in the left sidebar, choose a strategy (or paste PineScript and hit Translate), tweak commission and validation settings, then run the backtest. The right panel shows Summary (trades, profit factor, win rate, drawdown), plus Trades, Charts, and Validation tabs. Everything stays local at `127.0.0.1:5000`.
 
-### Standalone Engine (Windows EXE)
+### Standalone Desktop App (Windows EXE)
 
-![Wale Backtest Engine launcher](docs/screenshots/exe%20engine.png)
-
-Double-click **WaleBacktest.exe** and you get this launcher: it starts the Flask server on port 5000 and gives you a single **Open Dashboard** button to jump straight into the web backtester. No Python or terminal required. When you're done, **Stop & Quit** shuts the server and closes the app. Same engine under the hood whether you run from the EXE or from `python web_app.py`.
+Double-click **WaleBacktest.exe** and the full dashboard opens in its own native
+window — its own taskbar icon, resizable, no browser involved (rendered with the
+Edge WebView2 runtime that ships with Windows 10/11). No Python or terminal
+required; closing the window shuts everything down. If WebView2 is missing on a
+machine, the app falls back to opening the dashboard in the default browser.
+Same engine under the hood whether you run the EXE or `python web_app.py`.
 
 ---
 
@@ -47,26 +50,13 @@ python web_app.py
 # Opens http://127.0.0.1:5000 in your browser
 ```
 
-There is also a CLI for one-shot runs against a Pine file:
-
-```bash
-python backtest_engine.py --csv your_data.csv --pine examples/saty_phase_strategy.pine --run_step1 true
-```
-
-### Build Standalone EXE (Windows)
-
-Two build targets:
+### Build Standalone EXE
 
 ```bash
 pip install pyinstaller
-
-# Web launcher: Tk window + embedded Flask server + Open Dashboard button
 pyinstaller WaleBacktest.spec
+# Run the launcher from dist
 ./dist/WaleBacktest.exe
-
-# Desktop GUI app (PySide6, Databento integration)
-pyinstaller PineScriptBacktester.spec
-./dist/PineScriptBacktester.exe
 ```
 
 ---
@@ -77,13 +67,22 @@ pyinstaller PineScriptBacktester.spec
 
 Pick a source from the sidebar:
 
+- **Alpaca (live, free)** - The primary source. Enter your free Alpaca API key once
+  (alpaca.markets — a paper account is enough) and fetch live/historical OHLCV for any
+  US stock/ETF from 1-minute to daily bars, free via the IEX feed. Keys are validated
+  against Alpaca when you save them, stored locally in `~/.wale_backtest/config.json`,
+  and never leave your machine. Both classic header auth and the newer OAuth2
+  client-credentials keys work — the app detects which kind you have.
 - **Yahoo Finance** - Type a ticker (QQQ, NVDA, BTC-USD), pick an interval (1H, 1D, 1W), click Fetch.
 - **Dukascopy** - For forex tick data. Enter a pair (EUR-USD), date range, and resampling period.
 - **CSV Upload** - Drop in any OHLCV CSV file.
 
+**Free trial:** without an Alpaca key you get 5 free data downloads (served via Yahoo).
+After that, add your own free Alpaca key for unlimited live data. CSV upload is always free.
+
 ### 2. Pick or Write a Strategy
 
-The engine ships with 11 built-in strategies (Donchian, EMA Cross, MACD, RSI, NDX Trader, Saty Phase, etc). All `.py` files in `src/strategies/` are auto-discovered and appear in the dropdown — including strategies you translate or write yourself.
+The engine ships with 12 built-in strategies (Donchian, EMA Cross, MACD, RSI, NDX Trader, etc). Select one from the dropdown.
 
 Or write your own:
 
@@ -121,39 +120,55 @@ Every tab has an Export button:
 
 ## Execution Model
 
-The engine matches TradingView's default fill behavior:
+The engine matches TradingView's default broker emulator:
 
 | Event | Evaluated | Filled |
 |-------|-----------|--------|
-| Entry signal | Bar N close | Bar N+1 open |
-| Exit signal | Bar N close | Bar N+1 open |
+| `strategy.entry` / `strategy.close` | Bar N close | Bar N+1 open |
+| `strategy.exit` stop/limit | placed bar N | checked intrabar from bar N+1 |
+| Stop hit | intrabar | at the stop price (or open on gap-through) |
+| Limit hit | intrabar | at the limit price (or open on gap-through) |
 
-On bars where position changes, the return is calculated from open to close (since the fill happened at open). On bars where position is held, the return is close-to-close. Commission is deducted on every position change.
+When both stop and limit are hit in one bar, TradingView's documented bar-path
+assumption decides: if the open is closer to the high, price is assumed to travel
+open→high→low→close; if closer to the low, open→low→high→close.
 
-Trade entry and exit prices in the trade list are the actual open prices where fills occurred, not close prices.
+Trade prices in the trade list are the actual fill prices (open fills for market
+orders, stop/limit levels for bracket exits), not close prices.
 
 ---
 
-## Pine Translator
+## Pine Transpiler
 
-The translator handles these Pine functions:
+The transpiler is a real parser (lexer → expression AST → indentation-aware statement
+parser), not regex matching. It compiles Pine strategies into event-driven Python that
+runs against a TradingView-style broker emulator:
 
-| Pine Function | Python Output |
-|--------------|--------------|
-| `ta.ema(src, len)` | `src.ewm(span=len, adjust=False).mean()` |
-| `ta.sma(src, len)` | `src.rolling(len).mean()` |
-| `ta.rma(src, len)` | `src.ewm(alpha=1/len, adjust=False).mean()` |
-| `ta.rsi(src, len)` | Wilder's RMA on gain/loss (matches TV exactly) |
-| `ta.atr(len)` | RMA on true range |
-| `ta.macd(src, fast, slow, sig)` | EMA difference with custom parameters |
-| `ta.crossover(a, b)` | `(a > b) & (a.shift(1) <= b.shift(1))` |
-| `ta.crossunder(a, b)` | `(a < b) & (a.shift(1) >= b.shift(1))` |
-| `ta.highest(src, len)` | `src.rolling(len).max()` |
-| `ta.lowest(src, len)` | `src.rolling(len).min()` |
+- **Vectorized where possible** — pure indicator math (`ta.*`, arithmetic, crossovers)
+  is hoisted into numpy precomputation, including `ta.*` sub-expressions buried inside
+  stateful conditions.
+- **Stateful where necessary** — `var` declarations, `:=` mutation, `if`/`else if`/`else`
+  blocks, ternaries, series history (`x[1]`), and `strategy.position_size` guards are
+  compiled into a per-bar `on_bar()` loop with persistent state.
+- **Real order semantics** — `strategy.entry` fills at next bar open;
+  `strategy.exit(stop=, limit=, trail_points=, trail_offset=)` become standing orders
+  checked intrabar with TradingView's bar-path heuristic (green bar: open→low→high→close);
+  `strategy.close` exits at next bar open. Reversals, pyramiding=1, percent-of-equity
+  sizing, whole-share quantities, and percent commission all come from the `strategy()`
+  declaration.
 
-The translator also extracts `input.int()`, `input.float()`, `input.bool()` declarations and generates a parameter grid for optimization.
+Supported `ta.*`: ema, sma, rma, wma, hma, vwma, swma, alma, atr, tr, rsi, macd, bb,
+stoch, cci, mfi, wpr, obv, stdev, variance, dev, highest, lowest, mom, roc, change,
+sum, cum, avg, crossover, crossunder, cross, rising, falling, barssince, valuewhen,
+pivothigh, pivotlow, supertrend.
 
-Not supported yet: `ta.adx`, `ta.stoch`, `ta.bb`, `request.*`, `array.*`, ternary expressions.
+Every construct the transpiler cannot honor produces an explicit warning in the UI —
+nothing silently degrades. Not supported: `request.*`, `array.*`, `for`/`while` loops,
+user-defined functions, `switch`.
+
+Each translation is also smoke-tested automatically: the generated class is executed
+on 300 bars of synthetic data before it's registered, and any per-bar error fails the
+translation with the exact exception.
 
 ---
 
@@ -162,20 +177,11 @@ Not supported yet: `ta.adx`, `ta.stoch`, `ta.bb`, `request.*`, `array.*`, ternar
 ```
 wale-pinescript-engine/
   web_app.py                  Flask backend (web UI entry point)
-  launcher.py                 Tk launcher for EXE (starts server + Open Dashboard)
-  app.py                      PySide6 desktop GUI (Databento integration)
-  backtest_engine.py          CLI entry point (--csv + --pine)
-  WaleBacktest.spec           PyInstaller spec for the web launcher EXE
-  PineScriptBacktester.spec   PyInstaller spec for the desktop GUI EXE
+  launcher.py                 Desktop app entry point (native WebView2 window)
+  backtest_engine.py          CLI entry point
   templates/
     converge.html             Web UI (single-page dashboard)
-  examples/
-    saty_phase_strategy.pine  Example Pine strategies
-    new.pine
   src/
-    parser.py                 PineScript parameter/pattern extraction
-    backtest.py               Trade-by-trade engine (TV execution model)
-    validator.py              TradingView export comparison + diagnostics
     bar_returns.py            Bar-level return computation with next-bar-open fills
     data_loader.py            Yahoo, Dukascopy, CSV loading
     optimization.py           Grid search
@@ -185,7 +191,7 @@ wale-pinescript-engine/
       donchian.py             Donchian breakout
       ema_crossover.py        EMA crossover
       ndx_trader.py           NDX trend + RSI pullback
-      ...                     11 strategies total, auto-discovered
+      ...                     12 strategies total
     pine_translator/
       parser.py               PineScript AST extraction
       translator.py           Pine to Python code generation
@@ -267,6 +273,15 @@ python -m pytest tests/ -v
 
 ## Data Sources
 
+### Alpaca (primary — live, free)
+Free live and historical US equities data via Alpaca's IEX feed. Sign up free at
+[alpaca.markets](https://alpaca.markets) (paper account works), create API keys, and
+paste them into the Data Source panel once. Supports 1min/5min/15min/30min/1H/1D bars,
+split-adjusted, paginated to any range (IEX history is thinner before ~2017). Auth
+works with classic `APCA-API-KEY-ID`/`APCA-API-SECRET-KEY` headers or OAuth2
+client-credentials tokens from `authx.alpaca.markets` — auto-detected. Without keys,
+the app allows 5 free trial downloads, then requires a key.
+
 ### Yahoo Finance
 Type any ticker Yahoo supports. Daily data goes back decades. Hourly data is limited to the last 730 days by Yahoo's API.
 
@@ -282,12 +297,10 @@ Any CSV with `open`, `high`, `low`, `close` columns. The first column should be 
 
 - Python 3.10+
 - Windows 10/11 (for EXE builds)
-- Dependencies: Flask, pandas, numpy, scipy, matplotlib, yfinance (all in `requirements.txt`)
+- Dependencies: Flask, pandas, numpy, scipy, matplotlib, requests, yfinance
 
 Optional:
 - duka-dl (for Dukascopy forex data)
-- PySide6 + databento (for the desktop GUI, `app.py`)
-- pyinstaller (for EXE builds)
 
 ---
 

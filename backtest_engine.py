@@ -15,8 +15,9 @@ See docs/03-cli-reference.md for full documentation.
 import argparse
 import sys
 import os
+import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -28,6 +29,7 @@ from src.parser import PineScriptParser, StrategyParams
 from src.backtest import BacktestEngine, BacktestConfig, BacktestResult, run_backtest
 from src.validator import TradingViewValidator, validate_against_tradingview
 from src.indicators import ema, rma, atr, adx, rsi
+from src.time_utils import parse_mixed_timestamp_series
 
 
 def parse_args():
@@ -59,6 +61,29 @@ Examples:
     parser.add_argument('--holdout_months', type=int, default=6, help='Out-of-sample holdout period')
     parser.add_argument('--initial_capital', type=float, default=100000.0, help='Starting capital')
     parser.add_argument('--commission_pct', type=float, default=0.1, help='Commission as percent of trade value')
+    parser.add_argument(
+        '--parity_mode',
+        choices=['standard', 'strict'],
+        default='standard',
+        help='standard: generic execution, strict: debug-column-gated parity mode.',
+    )
+    parser.add_argument(
+        '--tv_seed_capital',
+        choices=['auto', 'off'],
+        default='auto',
+        help='When validating with --excel, auto-seed initial capital from first overlapping TV trade value.',
+    )
+    parser.add_argument(
+        '--time_alignment',
+        choices=['dynamic', 'fixed', 'off'],
+        default='dynamic',
+        help='TradingView timestamp alignment mode for validation.',
+    )
+    parser.add_argument(
+        '--parity_json',
+        default=None,
+        help='Optional output path for machine-readable parity diagnostics JSON.',
+    )
     parser.add_argument('--output_dir', default='backtest/out', help='Output directory for results')
     
     return parser.parse_args()
@@ -97,8 +122,8 @@ def load_ohlc_data(csv_path: str) -> pd.DataFrame:
     # Rename to standard names
     df = df.rename(columns={time_col: 'time'})
     
-    # Parse datetime
-    df['time'] = pd.to_datetime(df['time'])
+    # Parse datetime (supports epoch s/ms/us/ns and string timestamps)
+    df['time'] = parse_mixed_timestamp_series(df['time'])
     
     # Validate required columns
     required = ['open', 'high', 'low', 'close']
@@ -147,6 +172,121 @@ def create_output_dirs(base_dir: str):
     
     for d in dirs:
         Path(d).mkdir(parents=True, exist_ok=True)
+
+
+def infer_tv_overlap_seed_capital(
+    excel_path: str,
+    csv_start: datetime,
+    qty_type: str,
+    order_size_pct: float,
+) -> tuple[float, str] | tuple[None, str]:
+    """
+    Infer initial capital from TV overlap when CSV begins after TV history start.
+
+    This is useful when the CSV window is truncated but the TV export includes
+    earlier trades that changed equity and therefore position sizing.
+    """
+    if qty_type != "percent_of_equity" or order_size_pct <= 0:
+        return None, "Seed skipped: qty_type is not percent_of_equity."
+
+    try:
+        xl = pd.ExcelFile(excel_path)
+        sheet_names_lower = [s.lower().strip() for s in xl.sheet_names]
+        if 'list of trades' not in sheet_names_lower:
+            return None, "Seed skipped: 'List of trades' sheet not found."
+
+        trades = xl.parse(xl.sheet_names[sheet_names_lower.index('list of trades')])
+        trades.columns = [str(c).strip() for c in trades.columns]
+
+        required = {'Type', 'Date and time', 'Position size (value)'}
+        if not required.issubset(set(trades.columns)):
+            return None, "Seed skipped: required TV columns missing."
+
+        entries = trades[trades['Type'].astype(str).str.contains('Entry', case=False, na=False)].copy()
+        exits = trades[trades['Type'].astype(str).str.contains('Exit', case=False, na=False)].copy()
+        if entries.empty or exits.empty:
+            return None, "Seed skipped: no entry rows in TV export."
+
+        entries['Date and time'] = pd.to_datetime(entries['Date and time'], errors='coerce')
+        exits['Date and time'] = pd.to_datetime(exits['Date and time'], errors='coerce')
+        entries['Position size (value)'] = pd.to_numeric(entries['Position size (value)'], errors='coerce')
+        if 'Position size (qty)' in entries.columns:
+            entries['Position size (qty)'] = pd.to_numeric(entries['Position size (qty)'], errors='coerce')
+        if 'Price USD' in entries.columns:
+            entries['Price USD'] = pd.to_numeric(entries['Price USD'], errors='coerce')
+        if 'Net P&L USD' in exits.columns:
+            exits['Net P&L USD'] = pd.to_numeric(exits['Net P&L USD'], errors='coerce')
+
+        entries = entries.dropna(subset=['Date and time', 'Position size (value)']).sort_values('Date and time')
+        exits = exits.dropna(subset=['Date and time']).sort_values('Date and time')
+        if entries.empty:
+            return None, "Seed skipped: TV entry rows not parseable."
+
+        first_tv_entry = entries['Date and time'].min()
+        overlap_entries = entries[entries['Date and time'] >= csv_start]
+        overlap_exits = exits[exits['Date and time'] >= csv_start]
+        if overlap_entries.empty or overlap_exits.empty:
+            return None, "Seed skipped: no overlapping TV entries for CSV window."
+
+        # Only seed when TV includes prior history outside CSV window.
+        if first_tv_entry >= (csv_start - timedelta(minutes=1)):
+            return None, "Seed skipped: CSV already covers TV trade history start."
+
+        # Prefer a robust seed interval inferred from multiple overlap trades.
+        # For floor-based qty sizing:
+        # qty_k * price_k <= seed + cumulative_pnl_before_k < (qty_k + 1) * price_k
+        n = min(len(overlap_entries), len(overlap_exits))
+        lo = -np.inf
+        hi = np.inf
+        used_constraints = 0
+        cumulative_pnl_before = 0.0
+
+        for idx in range(n):
+            erow = overlap_entries.iloc[idx]
+            xrow = overlap_exits.iloc[idx]
+
+            qty = erow.get('Position size (qty)', np.nan)
+            price = erow.get('Price USD', np.nan)
+            pnl = xrow.get('Net P&L USD', np.nan)
+
+            if pd.notna(qty) and pd.notna(price):
+                qty_f = float(qty)
+                price_f = float(price)
+                if qty_f > 0 and price_f > 0:
+                    lo_i = qty_f * price_f - cumulative_pnl_before
+                    hi_i = (qty_f + 1.0) * price_f - 1e-9 - cumulative_pnl_before
+                    lo = max(lo, lo_i)
+                    hi = min(hi, hi_i)
+                    used_constraints += 1
+
+            if pd.notna(pnl):
+                cumulative_pnl_before += float(pnl)
+
+        if used_constraints >= 3 and np.isfinite(lo) and np.isfinite(hi) and lo < hi:
+            seed = (lo + hi) / 2.0
+            msg = (
+                f"Seeded initial capital from TV overlap interval: ${seed:,.2f} "
+                f"(range ${lo:,.2f} - ${hi:,.2f}, constraints={used_constraints})"
+            )
+            return seed, msg
+
+        # Fallback: first overlap position value proxy.
+        first_overlap = overlap_entries.iloc[0]
+        pos_value = float(first_overlap['Position size (value)'])
+        if pos_value <= 0:
+            return None, "Seed skipped: first overlap position value is non-positive."
+
+        seed = pos_value / (order_size_pct / 100.0)
+        if not np.isfinite(seed) or seed <= 0:
+            return None, "Seed skipped: inferred capital is invalid."
+
+        msg = (
+            f"Seeded initial capital from TV overlap: ${seed:,.2f} "
+            f"(first overlap position value ${pos_value:,.2f} at {first_overlap['Date and time']})"
+        )
+        return seed, msg
+    except Exception as exc:
+        return None, f"Seed skipped: failed to parse TV export ({exc})."
 
 
 def export_trades(trades, output_path: str):
@@ -325,11 +465,29 @@ def main():
         order_size_pct=settings.default_qty_value,
         qty_type=qty_type,
         pyramiding=settings.pyramiding,
+        process_orders_on_close=settings.process_orders_on_close,
+        calc_on_order_fills=settings.calc_on_order_fills,
+        parity_mode=args.parity_mode,
     )
-    print(f"  Capital: ${initial_capital:,.0f}")
+
+    # Optional TV overlap capital seeding for truncated CSV windows.
+    if args.excel and args.tv_seed_capital == 'auto':
+        seeded_capital, seed_msg = infer_tv_overlap_seed_capital(
+            excel_path=args.excel,
+            csv_start=df['time'].min(),
+            qty_type=qty_type,
+            order_size_pct=settings.default_qty_value,
+        )
+        print(f"  {seed_msg}")
+        if seeded_capital is not None:
+            config.initial_capital = seeded_capital
+
+    print(f"  Capital: ${config.initial_capital:,.0f}")
     print(f"  Commission: {commission_pct}%")
     print(f"  Position Size: {settings.default_qty_value}% of equity")
     print(f"  Pyramiding: {settings.pyramiding}")
+    print(f"  process_orders_on_close: {settings.process_orders_on_close}")
+    print(f"  calc_on_order_fills: {settings.calc_on_order_fills}")
     
     # Run backtest
     print("\nRunning backtest...")
@@ -351,8 +509,13 @@ def main():
         print(f"\nValidating against TradingView export: {args.excel}")
         try:
             last_csv_time = df['time'].max()
-            validator = TradingViewValidator(excel_path=args.excel)
-            validation = validator.validate(result.trades, last_csv_time)
+            validator = TradingViewValidator(excel_path=args.excel, time_alignment=args.time_alignment)
+            data_times = df['time'].tolist() if 'time' in df.columns else None
+            validation = validator.validate(
+                result.trades,
+                last_csv_time,
+                data_times=data_times,
+            )
             
             report = validator.generate_report(validation)
             print(report)
@@ -360,6 +523,30 @@ def main():
             # Save validation report
             with open(f"{args.output_dir}/validation_report.txt", 'w') as f:
                 f.write(report)
+
+            parity_json_path = args.parity_json or f"{args.output_dir}/parity_report.json"
+            parity_payload = {
+                "passed": validation.passed,
+                "message": validation.message,
+                "total_trades_compared": validation.total_trades_compared,
+                "matched_trades": validation.matched_trades,
+                "mismatched_trades": validation.mismatched_trades,
+                "our_total_pnl": validation.our_total_pnl,
+                "tv_total_pnl": validation.tv_total_pnl,
+                "pnl_difference": validation.pnl_difference,
+                "pnl_difference_pct": validation.pnl_difference_pct,
+                "mismatch_breakdown": validation.mismatch_breakdown,
+                "first_divergence": validation.first_divergence,
+                "time_alignment_mode": validation.time_alignment_mode,
+                "inferred_time_offset_minutes": validation.inferred_time_offset_minutes,
+                "feasibility_warnings": validation.feasibility_warnings,
+                "feasibility_blockers": validation.feasibility_blockers,
+                "session_diagnostics": validation.session_diagnostics,
+            }
+            parity_json_path = Path(parity_json_path)
+            parity_json_path.parent.mkdir(parents=True, exist_ok=True)
+            parity_json_path.write_text(json.dumps(parity_payload, indent=2), encoding='utf-8')
+            print(f"  Saved parity diagnostics: {parity_json_path}")
             
         except Exception as e:
             print(f"Error validating: {e}")

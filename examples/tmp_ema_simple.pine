@@ -1,0 +1,12 @@
+﻿//@version=5
+strategy("EMA Cross Simple", overlay=true)
+fastLength = input.int(10, "Fast EMA")
+slowLength = input.int(30, "Slow EMA")
+fastEMA = ta.ema(close, fastLength)
+slowEMA = ta.ema(close, slowLength)
+longCondition = ta.crossover(fastEMA, slowEMA)
+shortCondition = ta.crossunder(fastEMA, slowEMA)
+if longCondition
+    strategy.entry("Long", strategy.long)
+if shortCondition
+    strategy.entry("Short", strategy.short)

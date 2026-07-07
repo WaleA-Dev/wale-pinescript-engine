@@ -3,8 +3,15 @@ numpy>=1.24.0
 pandas>=2.0.0
 scipy>=1.10.0
 
-# Web UI
+# Web app
 flask>=3.0.0
+
+# Desktop window (EXE renders the dashboard in a native WebView2 window)
+pywebview>=6.0
+
+# Data sources
+requests>=2.31.0        # Alpaca market data (free IEX feed)
+yfinance>=0.2.40        # Yahoo Finance fallback / free trial
 
 # Data visualization
 matplotlib>=3.7.0
@@ -12,15 +19,10 @@ matplotlib>=3.7.0
 # Excel support
 openpyxl>=3.1.0
 
-# Tests
-pytest>=7.0.0
-
-# Data Providers
-yfinance>=0.2.40
-databento>=0.20.0
-
-# Optional: desktop GUI launcher (app.py)
-PySide6>=6.5.0
-
-# Optional: EXE packaging
+# Packaging
 pyinstaller>=6.0.0
+
+# Optional: Dukascopy forex data
+# duka-dl
+# polars
+# httpx

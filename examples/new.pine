@@ -1,55 +1,105 @@
 //@version=6
-strategy(
-     "Smart Trend Momentum Strategy v6",
-     overlay = true,
-     initial_capital = 10000,
-     default_qty_type = strategy.percent_of_equity,
-     default_qty_value = 100,
-     commission_type = strategy.commission.percent,
-     commission_value = 0.05
-)
+strategy("Starter NDX Trader v1 (Frequent Trades, ATR Risk)", overlay=true,
+     initial_capital=100000,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=100,
+     commission_type=strategy.commission.percent,
+     commission_value=0.01,
+     calc_on_order_fills=true,
+     process_orders_on_close=true,
+     use_bar_magnifier=true)
 
-// === INPUTS ===
-lenFast = input.int(20, "Fast EMA", minval=2, maxval=200)
-lenSlow = input.int(
-    50,
-    "Slow EMA",
-    minval=5,
-    maxval=300,
-    tooltip="Slow EMA length for the trend baseline"
-)
-rsiLen = input.int(14, "RSI Length", minval=2)
-rsiMin = input.float(45.0, "RSI Min", minval=0, maxval=100)
-rsiMax = input.float(70.0, "RSI Max", minval=0, maxval=100)
-atrLen = input.int(14, "ATR Length", minval=1)
-useShorts = input.bool(false, "Enable Shorts")
 
-// === INDICATORS ===
-emaFast = ta.ema(close, lenFast)
-emaSlow = ta.ema(close, lenSlow)
-rsiVal = ta.rsi(close, rsiLen)
-atrVal = ta.atr(atrLen)
+// --------------------
+// Inputs
+// --------------------
+tfNote = "Run on 30m or 1H for more trades. Use NDX proxy like NAS100, QQQ, NQ1!, etc."
 
-// === CONDITIONS ===
-uptrend = emaFast > emaSlow
-downtrend = emaFast < emaSlow
-rsiOk = rsiVal > rsiMin and rsiVal < rsiMax
-crossUp = ta.crossover(emaFast, emaSlow)
-crossDown = ta.crossunder(emaFast, emaSlow)
 
-longCondition = crossUp and rsiOk
-shortCondition = crossDown and useShorts
+fastLen   = input.int(20, "Fast EMA", minval=5, maxval=200)
+slowLen   = input.int(50, "Slow EMA", minval=10, maxval=400)
+rsiLen    = input.int(14, "RSI Length", minval=2, maxval=50)
+rsiPull   = input.int(45, "RSI Pullback Level (Long)", minval=10, maxval=60)
+rsiPullS  = input.int(55, "RSI Pullback Level (Short)", minval=40, maxval=90)
 
-// === ORDERS ===
-if longCondition
-    strategy.entry("Long", strategy.long)
 
-if shortCondition
-    strategy.entry("Short", strategy.short)
+atrLen    = input.int(14, "ATR Length", minval=2, maxval=100)
+slATR     = input.float(2.0, "Stop (ATR multiple)", minval=0.5, maxval=10.0, step=0.25)
+tpATR     = input.float(3.0, "Target (ATR multiple)", minval=0.5, maxval=15.0, step=0.25)
 
-if downtrend
-    strategy.close("Long", comment="Trend flip")
 
-// === VISUALS ===
-plot(emaFast, "Fast EMA", color=color.teal)
-plot(emaSlow, "Slow EMA", color=color.orange)
+useTimeExit  = input.bool(true, "Enable time exit (prevents holds)")
+maxHoldBars  = input.int(240, "Max hold bars", minval=10, maxval=5000,
+                 tooltip="On 1H: 240 bars ~ 10 days")
+
+
+// --------------------
+// Core indicators
+// --------------------
+emaFast = ta.ema(close, fastLen)
+emaSlow = ta.ema(close, slowLen)
+rsiVal  = ta.rsi(close, rsiLen)
+atrVal  = ta.atr(atrLen)
+
+
+// Trend state
+trendUp = emaFast > emaSlow
+trendDn = emaFast < emaSlow
+
+
+// Pullback entry logic:
+// Long: trend up, RSI dips below pullback and then crosses back up
+// Short: trend down, RSI rises above pullback and then crosses back down
+longSignal  = trendUp and ta.crossover(rsiVal, rsiPull)
+shortSignal = trendDn and ta.crossunder(rsiVal, rsiPullS)
+
+
+// --------------------
+// Orders
+// --------------------
+if (longSignal and strategy.position_size <= 0)
+    strategy.entry("L", strategy.long)
+
+
+if (shortSignal and strategy.position_size >= 0)
+    strategy.entry("S", strategy.short)
+
+
+// Protective exits via broker emulator
+// Using strategy.exit() is the standard way to model stops/targets. :contentReference[oaicite:1]{index=1}
+longStop  = strategy.position_avg_price - slATR * atrVal
+longLimit = strategy.position_avg_price + tpATR * atrVal
+shortStop = strategy.position_avg_price + slATR * atrVal
+shortLimit= strategy.position_avg_price - tpATR * atrVal
+
+
+strategy.exit("XL", from_entry="L", stop=longStop, limit=longLimit)
+strategy.exit("XS", from_entry="S", stop=shortStop, limit=shortLimit)
+
+
+// Optional time exit to avoid “stuck” holds
+var int entryBar = na
+newPos = (strategy.position_size != 0 and strategy.position_size[1] == 0)
+flatNow = (strategy.position_size == 0 and strategy.position_size[1] != 0)
+
+
+if newPos
+    entryBar := bar_index
+if flatNow
+    entryBar := na
+
+
+if useTimeExit and strategy.position_size != 0 and not na(entryBar)
+    if (bar_index - entryBar) >= maxHoldBars
+        if strategy.position_size > 0
+            strategy.close("L", comment="TIME")
+        if strategy.position_size < 0
+            strategy.close("S", comment="TIME")
+
+
+// --------------------
+// Plots
+// --------------------
+plot(emaFast, "EMA Fast")
+plot(emaSlow, "EMA Slow")
+

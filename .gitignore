@@ -17,7 +17,6 @@ backtest/out/
 # Your private strategy files (except examples)
 *.pine
 !examples/*.pine
-!/newstrat.pine
 
 # Build outputs
 build/
@@ -42,5 +41,24 @@ Thumbs.db
 *.key
 secrets.json
 
-# Generated reports (validation runs, plots)
+# Build & release artifacts
+build/
+dist/
+dist_*/
+*.spec.bak
+
+# Dev screenshots & scratch
+ui_*.png
+UI example.png
+.edge_*/
+
+# Generated reports & data
 reports/
+data/uploads/
+
+# Deployment link (contains project ids)
+.vercel/
+landing/.vercel/
+
+# Tracked example strategy used by tests
+!/newstrat.pine

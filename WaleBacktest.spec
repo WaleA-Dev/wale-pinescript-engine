@@ -1,49 +1,40 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""
-PyInstaller spec for the WaleBacktest launcher EXE.
-
-Builds launcher.py (Tk launcher + embedded Flask web backtester) into a
-single windowed executable. Paths are relative, so this works from any
-checkout location:
-
-    pyinstaller WaleBacktest.spec
-    ./dist/WaleBacktest.exe
-"""
-
-import os
-
-ROOT = os.path.abspath(os.getcwd())
-
-datas = [
-    (os.path.join(ROOT, "src"), "src"),
-    (os.path.join(ROOT, "templates"), "templates"),
-]
+from PyInstaller.utils.hooks import collect_submodules
 
 hiddenimports = [
-    "flask",
-    "numpy",
-    "pandas",
-    "pandas._libs.tslibs.timezones",
-    "dateutil.tz",
-    "scipy",
-    "matplotlib",
-    "matplotlib.backends.backend_agg",
-    "yfinance",
+    'flask', 'flask.json', 'jinja2', 'markupsafe', 'werkzeug',
+    'yfinance', 'requests', 'scipy', 'scipy.stats', 'matplotlib', 'pandas', 'numpy',
+    'webview', 'webview.platforms.edgechromium', 'webview.platforms.winforms',
+    'clr', 'clr_loader', 'pythonnet', 'proxy_tools', 'bottle',
+    'src.strategies.donchian', 'src.strategies.ema_crossover', 'src.strategies.ndx_trader',
+    'src.strategies.pine_base',
+    'src.bar_returns', 'src.optimization', 'src.permutation', 'src.data_loader',
+    'src.alpaca_data', 'src.pine_runtime', 'src.pine_ta',
+    'src.plotting', 'src.validation', 'src.validation.full_validation',
+    'src.validation.in_sample_permutation', 'src.validation.walk_forward',
+    'src.pine_translator', 'src.pine_translator.pipeline',
 ]
+hiddenimports += collect_submodules('src')
+hiddenimports += collect_submodules('flask')
 
 a = Analysis(
-    [os.path.join(ROOT, "launcher.py")],
-    pathex=[ROOT],
+    ['launcher.py'],
+    pathex=[],
     binaries=[],
-    datas=datas,
-    hiddenimports=hiddenimports,
+    datas=[
+        ('templates', 'templates'),
+        ('src', 'src'),
+        ('web_app.py', '.'),
+        ('gui/assets/wale.ico', 'gui/assets'),
+    ],
+    hiddenimports=hiddenimports + ['web_app'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["PySide6"],
+    excludes=[],
     noarchive=False,
+    optimize=0,
 )
-
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -52,7 +43,8 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="WaleBacktest",
+    name='WaleBacktest',
+    icon='gui/assets/wale.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

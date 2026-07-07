@@ -1,70 +1,134 @@
-#!/usr/bin/env python3
 """
-Wale Backtest Engine - EXE Launcher
+Wale Backtest Engine — desktop application entry point.
 
-Tiny Tk window that starts the Flask web backtester in the background and
-gives you an "Open Dashboard" button. This is the entry point for the
-standalone WaleBacktest executable (see WaleBacktest.spec).
-
-Usage:
-    python launcher.py          # same launcher, run from source
-    pyinstaller WaleBacktest.spec && ./dist/WaleBacktest.exe
+Runs the Flask backend in a background thread and renders the dashboard in a
+native window (Edge WebView2 via pywebview) so the app behaves like a normal
+Windows program: its own window, taskbar icon, no browser. Falls back to the
+default browser only if no WebView2 runtime is available.
 """
 
+from __future__ import annotations
+
+import ctypes
 import os
+import socket
 import sys
 import threading
-import webbrowser
-import tkinter as tk
+import time
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+APP_NAME = "Wale Backtest Engine"
+APP_ID = "WaleADev.WaleBacktest"  # taskbar grouping / icon identity
 
-PORT = int(os.environ.get("PORT", 5000))
+# ── Path setup (must happen before importing web_app) ────────────────────────
+if getattr(sys, "frozen", False):
+    _BUNDLE = Path(sys._MEIPASS)
+    _ROOT = Path(sys.executable).resolve().parent
+else:
+    _BUNDLE = Path(__file__).resolve().parent
+    _ROOT = _BUNDLE
+sys.path.insert(0, str(_BUNDLE))
+
+
+def _pick_port(preferred: int = 5000) -> int:
+    """Use the preferred port if free, otherwise let the OS pick one."""
+    for candidate in (preferred, 0):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", candidate))
+                return s.getsockname()[1]
+        except OSError:
+            continue
+    return preferred
+
+
+PORT = int(os.environ.get("PORT", 0)) or _pick_port(5000)
 URL = f"http://127.0.0.1:{PORT}"
 
 
-def start_server() -> None:
-    """Run the Flask app in this (daemon) thread."""
+def start_server():
+    """Import and run Flask in this thread (daemon)."""
     from web_app import app, _preload
-
-    try:
-        _preload()
-    except Exception:
-        pass
-
-    # Never use the reloader here: it forks the process and would leave
-    # orphan servers running after the launcher quits.
+    _preload()
     app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False)
 
 
-def main() -> None:
+def wait_for_server(timeout: float = 30.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urlopen(URL, timeout=2)
+            return True
+        except (URLError, OSError):
+            time.sleep(0.3)
+    return False
+
+
+def _error_box(message: str):
+    try:
+        ctypes.windll.user32.MessageBoxW(0, message, APP_NAME, 0x10)  # MB_ICONERROR
+    except Exception:
+        print(message, file=sys.stderr)
+
+
+def main() -> int:
+    # Proper taskbar identity (icon + grouping) on Windows
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:
+        pass
+
     server = threading.Thread(target=start_server, daemon=True)
     server.start()
 
-    root = tk.Tk()
-    root.title("Wale Backtest Engine")
-    root.geometry("360x180")
-    root.resizable(False, False)
+    if not wait_for_server():
+        _error_box("The backtest server failed to start.\n\n"
+                   "If another copy of Wale Backtest is running, close it and try again.")
+        return 1
 
-    tk.Label(root, text="Wale Backtest Engine", font=("Segoe UI", 14, "bold")).pack(pady=(18, 4))
-    tk.Label(root, text=f"Server running at {URL}", font=("Segoe UI", 10)).pack(pady=(0, 12))
+    # ── Native window (Edge WebView2) ────────────────────────────────────────
+    try:
+        import webview
 
-    tk.Button(
-        root, text="Open Dashboard", width=24, height=2,
-        command=lambda: webbrowser.open(URL),
-    ).pack(pady=(0, 8))
-
-    def stop_and_quit() -> None:
-        root.destroy()
-        # The Flask thread is a daemon; exiting the process stops it.
-        os._exit(0)
-
-    tk.Button(root, text="Stop && Quit", width=24, command=stop_and_quit).pack()
-    root.protocol("WM_DELETE_WINDOW", stop_and_quit)
-
-    root.mainloop()
+        webview.create_window(
+            APP_NAME,
+            URL,
+            width=1480,
+            height=920,
+            min_size=(1100, 700),
+            background_color="#09090b",
+            text_select=True,
+            zoomable=True,
+        )
+        # gui='edgechromium' -> WebView2 (ships with Windows 10/11)
+        webview.start(gui="edgechromium")
+        return 0
+    except Exception:
+        # No WebView2 runtime — fall back to the default browser. The dialog
+        # keeps the server alive; dismissing it quits the app.
+        import webbrowser
+        webbrowser.open(URL)
+        try:
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "Microsoft Edge WebView2 is not available, so the dashboard "
+                f"opened in your browser instead.\n\n{URL}\n\n"
+                "Click OK when you are done to stop the server.",
+                APP_NAME, 0x40,  # MB_ICONINFORMATION
+            )
+        except Exception:
+            print(f"Dashboard: {URL} — press Ctrl+C to quit")
+            try:
+                while True:
+                    time.sleep(3600)
+            except KeyboardInterrupt:
+                pass
+        return 0
+    finally:
+        os._exit(0)  # take the Flask daemon thread down with the window
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
