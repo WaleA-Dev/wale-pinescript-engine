@@ -1,0 +1,36 @@
+//@version=5
+strategy("RSI2 Trend Pullback", overlay=true, initial_capital=100000, pyramiding=0)
+
+// === INPUTS ===
+emaLen = input.int(200, "Trend EMA", minval=10)
+rsiLen = input.int(2, "RSI Length", minval=2)
+rsiBuyLevel = input.float(10.0, "RSI Buy Level", minval=1, maxval=50)
+rsiExitLevel = input.float(70.0, "RSI Exit Level", minval=50, maxval=99)
+donchianLen = input.int(20, "Breakout Lookback", minval=5)
+
+// === INDICATORS ===
+trendEMA = ta.ema(close, emaLen)
+rsiFast = ta.rsi(close, rsiLen)
+highestHigh = ta.highest(high, donchianLen)
+lowestLow = ta.lowest(low, donchianLen)
+
+// === CONDITIONS ===
+inUptrend = close > trendEMA
+pullback = rsiFast < rsiBuyLevel
+recovered = rsiFast > rsiExitLevel
+breakout = ta.crossover(close, highestHigh)
+
+longEntry = inUptrend and pullback
+longExit = recovered
+
+// === ORDERS ===
+if longEntry
+    strategy.entry("Long", strategy.long)
+
+if longExit
+    strategy.close("Long", comment="RSI recovered")
+
+// === VISUALS ===
+plot(trendEMA, "Trend EMA", color=color.blue)
+plot(highestHigh, "Breakout Level", color=color.green)
+plot(lowestLow, "Support", color=color.red)

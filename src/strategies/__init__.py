@@ -22,6 +22,38 @@ STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
 
 VALIDATION_STATUS: Dict[str, str] = {}
 
+_DISCOVERED = False
+
+
+def discover_strategies() -> Dict[str, Type[BaseStrategy]]:
+    """
+    Import every module in this package and register all BaseStrategy
+    subclasses found. Broken modules (e.g. half-finished translations)
+    are skipped so one bad file can't take the registry down.
+    """
+    global _DISCOVERED
+    strategy_dir = Path(__file__).resolve().parent
+    for candidate in sorted(strategy_dir.glob("*.py")):
+        module_name = candidate.stem
+        if module_name.startswith("_") or module_name == "base":
+            continue
+        if _normalize(module_name) in STRATEGY_REGISTRY:
+            continue
+        try:
+            mod = importlib.import_module(f"src.strategies.{module_name}")
+        except Exception:
+            continue
+        for obj in vars(mod).values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, BaseStrategy)
+                and obj is not BaseStrategy
+            ):
+                register_strategy(module_name, obj)
+                break
+    _DISCOVERED = True
+    return STRATEGY_REGISTRY
+
 
 def _normalize(name: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_")
@@ -75,6 +107,7 @@ __all__ = [
     "NdxTraderStrategy",
     "STRATEGY_REGISTRY",
     "VALIDATION_STATUS",
+    "discover_strategies",
     "get_strategy_class",
     "register_strategy",
     "update_validation_status",
